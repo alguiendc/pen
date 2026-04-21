@@ -4,7 +4,7 @@
  * evt = { x, y, tool, pressure, metric, pointCount }
  * tool = 'penThin' | 'penThick' | 'eraser' | 'none'
  */
-export const VERSION = '0.5';
+export const VERSION = '0.6';
 
 const DEFAULTS = {
   penThin:  { min: 0,    max: 1.2 },
@@ -45,18 +45,31 @@ export class PenDetector {
   }
 
   _irHandle(e) {
-    const ts = e.touches;
+    const ts   = e.touches;
     if (!ts.length) return;
+    const rect = this._el.getBoundingClientRect();
 
-    // average (radiusX+radiusY)/2 across all contacts
+    // Centroid + avg radius + bounding box — all in one pass
     let rSum = 0, cx = 0, cy = 0;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const t of ts) {
       rSum += ((t.radiusX || 0) + (t.radiusY || 0)) / 2;
-      cx   += t.clientX;
-      cy   += t.clientY;
+      const x = t.clientX - rect.left, y = t.clientY - rect.top;
+      cx += x; cy += y;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
     }
-    const metric = rSum / ts.length;
-    const rect   = this._el.getBoundingClientRect();
+    const n       = ts.length;
+    const bboxW   = maxX - minX;
+    const bboxH   = maxY - minY;
+    const bboxArea = bboxW * bboxH;          // px² — spread of all contacts
+    const avgRadius = rSum / n;              // avg (rX+rY)/2 per touch point
+
+    // Use avgRadius as classification metric (swap for bboxArea if screen reports fixed radius)
+    const metric = avgRadius;
+    const t0  = ts[0];
+    const rx  = t0.radiusX || 0;
+    const ry  = t0.radiusY || 0;
 
     // Lock tool ONLY on the very first contact of the stroke.
     // Tilt adds new touch points → fires more touchstart events → must NOT re-classify.
@@ -65,18 +78,18 @@ export class PenDetector {
     }
     const tool = this._strokeTool || 'none';
 
-    // radiusX/Y of first touch + magnitude for tilt monitoring
-    const t0  = ts[0];
-    const rx  = t0.radiusX || 0;
-    const ry  = t0.radiusY || 0;
-
     this._emit(e.type === 'touchstart' ? 'pendown' : 'penmove', {
-      x:          cx / ts.length - rect.left,
-      y:          cy / ts.length - rect.top,
+      x: cx / n - rect.left,
+      y: cy / n - rect.top,
       tool,
       pressure:   this._pressure(metric, tool),
       metric,
-      pointCount: ts.length,
+      pointCount: n,
+      radiusX:    rx,
+      radiusY:    ry,
+      radiusMag:  Math.sqrt(rx * rx + ry * ry),
+      bboxW, bboxH, bboxArea,
+    });
       radiusX:    rx,
       radiusY:    ry,
       radiusMag:  Math.sqrt(rx * rx + ry * ry),

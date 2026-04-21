@@ -78,10 +78,18 @@
     <button id="btn-ink">Ink</button>
   </div>
   <div id="tool">Ninguno</div>
-  <div id="dbg">pts:— · metric:— · rX:— · rY:— · √(rX²+rY²):—</div>
+  <div id="dbg" style="font-size:10px;line-height:1.6">
+    <span id="d1">pts:—</span> &nbsp;
+    <span id="d2">metric:—</span> &nbsp;
+    <span id="d3">rX:—</span> &nbsp;
+    <span id="d4">rY:—</span> &nbsp;
+    <span id="d5">√(rX²+rY²):—</span><br>
+    <span id="d6">bbox W×H:—</span> &nbsp;
+    <span id="d7">bboxArea:—</span>
+  </div>
   <button class="plain" id="btn-clr">Limpiar</button>
   <button class="plain" id="btn-cfg">⚙ Calibrar</button>
-  <span style="margin-left:auto;font-size:10px;color:#444">v0.5</span>
+  <span style="margin-left:auto;font-size:10px;color:#444">v0.6</span>
 </div>
 
 <div id="wrap">
@@ -152,7 +160,6 @@ const STYLE = {
   penThin:  { w: 2,  color: '#4cc9f0' },
   penThick: { w: 14, color: '#f8961e' },
   eraser:   { w: 50, color: null      },
-  none:     { w: 3,  color: '#555'    },
 };
 
 function start(m) {
@@ -179,7 +186,8 @@ function start(m) {
 }
 
 function draw(from, evt) {
-  const s = STYLE[evt.tool] || STYLE.none;
+  const s = STYLE[evt.tool];
+  if (!s) return; // 'none' → don't draw
   dctx.beginPath();
   dctx.moveTo(from.x, from.y);
   dctx.lineTo(evt.x, evt.y);
@@ -199,18 +207,21 @@ function draw(from, evt) {
 // ── debug bar ─────────────────────────────────────────────────────────────
 function setDebug(e) {
   const tb = document.getElementById('tool');
-  tb.textContent = e.tool;
-  tb.className   = 't-' + e.tool;
-  const rx  = (e.radiusX  ?? 0).toFixed(2);
-  const ry  = (e.radiusY  ?? 0).toFixed(2);
-  const mag = (e.radiusMag ?? 0).toFixed(2);
-  document.getElementById('dbg').textContent =
-    `pts:${e.pointCount} · metric:${e.metric.toFixed(2)} · rX:${rx} · rY:${ry} · √(rX²+rY²):${mag}`;
+  tb.textContent = e.tool; tb.className = 't-' + e.tool;
+  document.getElementById('d1').textContent = `pts:${e.pointCount}`;
+  document.getElementById('d2').textContent = `metric:${(e.metric ?? 0).toFixed(2)}`;
+  document.getElementById('d3').textContent = `rX:${(e.radiusX ?? 0).toFixed(2)}`;
+  document.getElementById('d4').textContent = `rY:${(e.radiusY ?? 0).toFixed(2)}`;
+  document.getElementById('d5').textContent = `√(rX²+rY²):${(e.radiusMag ?? 0).toFixed(2)}`;
+  document.getElementById('d6').textContent = `bbox:${Math.round(e.bboxW??0)}×${Math.round(e.bboxH??0)}`;
+  document.getElementById('d7').textContent = `bboxArea:${Math.round(e.bboxArea??0)}px²`;
 }
 function clearDebug() {
-  const tb = document.getElementById('tool');
-  tb.textContent = 'Ninguno'; tb.className = '';
-  document.getElementById('dbg').textContent = 'pts:— · metric:— · pressure:—';
+  document.getElementById('tool').textContent = 'Ninguno';
+  document.getElementById('tool').className = '';
+  ['d1','d2','d3','d4','d5','d6','d7'].forEach(id => {
+    document.getElementById(id).textContent = document.getElementById(id).textContent.split(':')[0] + ':—';
+  });
 }
 
 // ── mode buttons ──────────────────────────────────────────────────────────
