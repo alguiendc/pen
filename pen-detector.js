@@ -1,0 +1,147 @@
+/**
+ * pen-detector.js — minimal IR / Windows Ink detection
+ * Events: pendown(evt), penmove(evt), penup()
+ * evt = { x, y, tool, pressure, metric, pointCount }
+ * tool = 'penThin' | 'penThick' | 'eraser' | 'none'
+ */
+
+const DEFAULTS = {
+  penThin:  { min: 0,    max: 1.2 },
+  penThick: { min: 1.4,  max: 2.8 },
+  eraser:   { min: 13,   max: 20  },
+};
+
+export class PenDetector {
+  constructor({ element, mode = 'ir', thresholds } = {}) {
+    if (!element) throw new Error('PenDetector: element required');
+    this._el     = element;
+    this._mode   = mode;
+    this._thr    = Object.assign({}, DEFAULTS, thresholds);
+    this._ev     = {};
+    this._active = new Set(); // ink pointer ids
+    this._b      = {};
+
+    this._el.style.touchAction = 'none';
+    mode === 'ir' ? this._initIR() : this._initInk();
+  }
+
+  // ── tiny event emitter ───────────────────────────────────────────────────
+  on(e, fn)      { (this._ev[e] = this._ev[e] || []).push(fn); return this; }
+  off(e, fn)     { if (this._ev[e]) this._ev[e] = this._ev[e].filter(h => h !== fn); return this; }
+  _emit(e, d)    { (this._ev[e] || []).slice().forEach(fn => fn(d)); }
+
+  // ── IR (Touch Events) ────────────────────────────────────────────────────
+  _initIR() {
+    const o = { passive: false };
+    this._b.ts = e => { e.preventDefault(); this._irHandle(e); };
+    this._b.tm = e => { e.preventDefault(); this._irHandle(e); };
+    this._b.te = e => { e.preventDefault(); if (!e.touches.length) this._emit('penup', {}); };
+    this._el.addEventListener('touchstart',  this._b.ts, o);
+    this._el.addEventListener('touchmove',   this._b.tm, o);
+    this._el.addEventListener('touchend',    this._b.te, o);
+    this._el.addEventListener('touchcancel', this._b.te, o);
+  }
+
+  _irHandle(e) {
+    const ts = e.touches;
+    if (!ts.length) return;
+
+    // average (radiusX+radiusY)/2 across all contacts
+    let rSum = 0, cx = 0, cy = 0;
+    for (const t of ts) {
+      rSum += ((t.radiusX || 0) + (t.radiusY || 0)) / 2;
+      cx   += t.clientX;
+      cy   += t.clientY;
+    }
+    const metric = rSum / ts.length;
+    const rect   = this._el.getBoundingClientRect();
+    const tool   = this._classify(metric);
+
+    this._emit(e.type === 'touchstart' ? 'pendown' : 'penmove', {
+      x:          cx / ts.length - rect.left,
+      y:          cy / ts.length - rect.top,
+      tool,
+      pressure:   this._pressure(metric, tool),
+      metric,
+      pointCount: ts.length,
+    });
+  }
+
+  // ── Ink (Pointer Events) ─────────────────────────────────────────────────
+  _initInk() {
+    this._b.pd = e => this._inkDown(e);
+    this._b.pm = e => this._inkMove(e);
+    this._b.pu = e => this._inkUp(e);
+    this._el.addEventListener('pointerdown',   this._b.pd);
+    this._el.addEventListener('pointermove',   this._b.pm);
+    this._el.addEventListener('pointerup',     this._b.pu);
+    this._el.addEventListener('pointercancel', this._b.pu);
+  }
+
+  _inkBuild(e) {
+    const rect   = this._el.getBoundingClientRect();
+    const isErase = (e.buttons & 32) !== 0;
+    const p      = e.pressure || 0;
+    const tool   = isErase ? 'eraser' : p > 0.45 ? 'penThick' : 'penThin';
+    return {
+      x: e.clientX - rect.left, y: e.clientY - rect.top,
+      tool, pressure: p, metric: p, pointCount: 1,
+    };
+  }
+
+  _inkDown(e) {
+    if (e.pointerType !== 'pen') return;
+    e.preventDefault();
+    this._el.setPointerCapture(e.pointerId);
+    this._active.add(e.pointerId);
+    this._emit('pendown', this._inkBuild(e));
+  }
+
+  _inkMove(e) {
+    if (e.pointerType !== 'pen' || !this._active.has(e.pointerId)) return;
+    e.preventDefault();
+    this._emit('penmove', this._inkBuild(e));
+  }
+
+  _inkUp(e) {
+    if (e.pointerType !== 'pen') return;
+    this._active.delete(e.pointerId);
+    if (!this._active.size) this._emit('penup', {});
+  }
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  _classify(m) {
+    const t = this._thr;
+    if (m >= t.penThin.min  && m <= t.penThin.max)  return 'penThin';
+    if (m >= t.penThick.min && m <= t.penThick.max) return 'penThick';
+    if (m >= t.eraser.min   && m <= t.eraser.max)   return 'eraser';
+    return 'none';
+  }
+
+  _pressure(m, tool) {
+    const t = this._thr[tool];
+    if (!t || t.max <= t.min) return 0;
+    return Math.max(0, Math.min(1, (m - t.min) / (t.max - t.min)));
+  }
+
+  // ── public API ───────────────────────────────────────────────────────────
+  get thresholds() { return this._thr; }
+  get mode()       { return this._mode; }
+
+  setThresholds(thr) { Object.assign(this._thr, thr); return this; }
+
+  destroy() {
+    const el = this._el;
+    if (this._mode === 'ir') {
+      el.removeEventListener('touchstart',  this._b.ts);
+      el.removeEventListener('touchmove',   this._b.tm);
+      el.removeEventListener('touchend',    this._b.te);
+      el.removeEventListener('touchcancel', this._b.te);
+    } else {
+      el.removeEventListener('pointerdown',   this._b.pd);
+      el.removeEventListener('pointermove',   this._b.pm);
+      el.removeEventListener('pointerup',     this._b.pu);
+      el.removeEventListener('pointercancel', this._b.pu);
+    }
+  }
+}

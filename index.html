@@ -3,151 +3,140 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>pen-detector demo</title>
+  <title>pen-detector</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background:#1a1a2e; color:#eee; font-family:monospace; overflow:hidden; height:100vh; display:flex; flex-direction:column; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#111; color:#eee; font-family:monospace; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
 
-    /* ── debug bar ── */
     #bar {
-      background:#16213e; padding:6px 12px; display:flex; gap:14px; align-items:center;
-      flex-wrap:wrap; border-bottom:2px solid #0f3460; user-select:none; min-height:50px;
+      background:#1a1a2e; padding:8px 12px;
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      border-bottom:2px solid #0f3460; min-height:48px; user-select:none;
     }
-    .b { display:flex; flex-direction:column; }
-    .bl { font-size:9px; color:#555; text-transform:uppercase; letter-spacing:.3px; }
-    .bv { font-size:17px; font-weight:bold; line-height:1.2; }
-    #mode-badge {
-      padding:3px 10px; border-radius:20px; font-size:12px; font-weight:bold;
-      transition:background .1s,color .1s;
-    }
-    .m-none     { background:#2a2a2a; color:#666; }
-    .m-penThin  { background:#0077b6; color:#fff; }
-    .m-penThick { background:#f8961e; color:#000; }
-    .m-eraser   { background:#f72585; color:#fff; }
-    /* mode selector */
-    #mode-sel { display:flex; gap:0; border:1px solid #0f3460; border-radius:7px; overflow:hidden; }
+
+    /* IR / Ink toggle */
+    #mode-sel { display:flex; border:1px solid #333; border-radius:6px; overflow:hidden; }
     #mode-sel button {
-      padding:4px 10px; background:#0d1b2a; color:#777; border:none; cursor:pointer;
-      font-family:monospace; font-size:12px; font-weight:bold; transition:background .1s,color .1s;
+      padding:4px 12px; background:#1a1a2e; color:#666;
+      border:none; cursor:pointer; font-family:monospace; font-size:12px; font-weight:bold;
     }
-    #mode-sel button.active { background:#4cc9f0; color:#000; }
+    #mode-sel button.on { background:#4cc9f0; color:#000; }
 
-    #btn-cfg { margin-left:auto; padding:4px 9px; background:#0f3460; color:#eee; border:1px solid #1a5276; border-radius:7px; cursor:pointer; font-size:15px; }
-    #btn-cfg.on { background:#4cc9f0; color:#000; }
-    #btn-clr { padding:4px 10px; background:#e63946; color:#fff; border:none; border-radius:7px; cursor:pointer; font-family:monospace; }
-    /* hide calibration sidebar when Ink mode */
-    body.ink-mode .ir-only { display:none !important; }
+    /* tool badge */
+    #tool {
+      padding:3px 12px; border-radius:20px; font-size:13px; font-weight:bold;
+      background:#222; color:#555;
+    }
+    .t-penThin  { background:#0077b6 !important; color:#fff !important; }
+    .t-penThick { background:#f8961e !important; color:#000 !important; }
+    .t-eraser   { background:#f72585 !important; color:#fff !important; }
 
-    /* ── main ── */
-    #main { flex:1; display:flex; overflow:hidden; }
+    #dbg { font-size:11px; color:#666; }
+
+    button.plain {
+      padding:4px 10px; background:#222; color:#aaa;
+      border:1px solid #333; border-radius:6px; cursor:pointer; font-family:monospace; font-size:12px;
+    }
+    button.plain:hover { background:#333; }
+    #btn-cfg { margin-left:auto; }
+    #btn-cfg.on { background:#4cc9f0; color:#000; border-color:#4cc9f0; }
+
+    /* canvas */
     #wrap { flex:1; position:relative; }
-    canvas { position:absolute; top:0; left:0; width:100%; height:100%; touch-action:none; }
-    #dc { z-index:2; }
-    #oc { z-index:1; background:#111; }
+    canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; }
+    #cc { background:#1a1a2e; }
+    #dc { z-index:1; }
 
-    /* ── sidebar ── */
-    #sb {
-      width:230px; background:#16213e; border-left:2px solid #0f3460;
-      padding:12px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;
-      transition:width .2s, padding .2s;
+    /* calibration panel */
+    #cal {
+      position:absolute; top:0; right:0; bottom:0; width:220px;
+      background:#16213e; border-left:2px solid #0f3460;
+      padding:12px; display:flex; flex-direction:column; gap:10px;
+      overflow-y:auto; z-index:5;
+      transform:translateX(100%); transition:transform .2s;
     }
-    #sb.hidden { width:0; padding:0; overflow:hidden; border:none; }
-    .sb-title { font-size:12px; font-weight:bold; color:#aaa; border-bottom:1px solid #0f3460; padding-bottom:5px; }
-    #cal-banner { display:none; background:#f72585; color:#fff; border-radius:5px; padding:5px 7px; font-size:11px; text-align:center; animation:pulse 1s infinite; }
-    #cal-banner.on { display:block; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
-    .tsec { display:flex; flex-direction:column; gap:4px; padding:7px; border-radius:7px; background:#0d1b2a; border:2px solid transparent; transition:border-color .15s; }
-    .tsec.cal { border-color:#f72585; }
-    .tn { font-size:11px; font-weight:bold; }
-    .ct { color:#4cc9f0; } .ck { color:#f8961e; } .ce { color:#f72585; }
-    .rr { display:flex; gap:5px; }
-    .rr label { display:flex; flex-direction:column; font-size:9px; color:#666; flex:1; }
-    .rr input { background:#1a2a3a; border:1px solid #0f3460; color:#eee; font-family:monospace; font-size:13px; padding:2px 4px; border-radius:3px; width:100%; }
-    .btn-rd { padding:4px; border:none; border-radius:5px; cursor:pointer; font-family:monospace; font-size:11px; background:#1a3a5a; color:#eee; }
-    .btn-rd.rec { background:#f72585; color:#fff; }
-    .btn-rd:disabled { opacity:.3; cursor:default; }
-    .live { font-size:10px; color:#4cc9f0; min-height:38px; white-space:pre-line; line-height:1.4; }
-    #btn-rst { padding:5px; background:#2a1a1a; color:#f72585; border:1px solid #f7258544; border-radius:5px; cursor:pointer; font-family:monospace; font-size:10px; }
+    #cal.open { transform:translateX(0); }
+    .cal-title { font-size:12px; color:#aaa; border-bottom:1px solid #0f3460; padding-bottom:6px; }
+    .tool-row { background:#0d1b2a; border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:5px; border:2px solid transparent; }
+    .tool-row.active { border-color:#f72585; }
+    .tool-label { font-size:11px; font-weight:bold; }
+    .inputs { display:flex; gap:6px; }
+    .inputs label { flex:1; display:flex; flex-direction:column; font-size:9px; color:#666; }
+    .inputs input { background:#0a1525; border:1px solid #1a3a5a; color:#eee; font-family:monospace; font-size:13px; padding:3px 5px; border-radius:4px; }
+    .btn-read { padding:4px 8px; border:none; border-radius:5px; background:#1a3a5a; color:#eee; cursor:pointer; font-family:monospace; font-size:11px; }
+    .btn-read.rec { background:#f72585; color:#fff; }
+    .btn-read:disabled { opacity:.3; }
+    .live { font-size:10px; color:#4cc9f0; white-space:pre-line; min-height:32px; }
+    #btn-reset { margin-top:auto; padding:5px; background:#2a1010; color:#f72585; border:1px solid #f7258533; border-radius:5px; cursor:pointer; font-size:11px; font-family:monospace; }
   </style>
 </head>
 <body>
 
 <div id="bar">
-  <!-- Input mode selector -->
   <div id="mode-sel">
-    <button id="btn-ir"  class="active">IR</button>
+    <button id="btn-ir" class="on">IR</button>
     <button id="btn-ink">Ink</button>
   </div>
-  <div class="b"><span class="bl">Puntos</span><span class="bv" id="d-pts">0</span></div>
-  <div class="b"><span class="bl">Radio/Presión</span><span class="bv" id="d-rad">0.00</span></div>
-  <div class="b"><span class="bl">Presión norm</span><span class="bv" id="d-prs">0.00</span></div>
-  <div class="b"><span class="bl">TiltMag</span><span class="bv" id="d-tlt">0.00</span></div>
-  <div class="b"><span class="bl">Speed px/ms</span><span class="bv" id="d-spd">0.00</span></div>
-  <div class="b"><span class="bl">Dir °</span><span class="bv" id="d-dir">0</span></div>
-  <div id="mode-badge" class="m-none">Ninguno</div>
-  <button id="btn-clr">Limpiar</button>
-  <button id="btn-cfg" class="ir-only">⚙ IR</button>
+  <div id="tool">Ninguno</div>
+  <div id="dbg">pts:— · metric:— · pressure:—</div>
+  <button class="plain" id="btn-clr">Limpiar</button>
+  <button class="plain" id="btn-cfg">⚙ Calibrar</button>
 </div>
 
-<div id="main">
-  <div id="wrap">
-    <canvas id="oc"></canvas>
-    <canvas id="dc"></canvas>
-  </div>
+<div id="wrap">
+  <canvas id="cc"></canvas>
+  <canvas id="dc"></canvas>
 
-  <div id="sb" class="hidden">
-    <div class="sb-title">Umbrales IR <small style="color:#555">(radio px)</small></div>
-    <div id="cal-banner">Toca con el instrumento…</div>
+  <div id="cal">
+    <div class="cal-title">Umbrales IR (radio px)</div>
 
-    <div class="tsec" id="sec-penThin">
-      <div class="tn ct">● Lápiz fino</div>
-      <div class="rr">
-        <label>min<input type="number" id="min-penThin" step="0.1" min="0" value="0"></label>
-        <label>max<input type="number" id="max-penThin" step="0.1" min="0" value="1.2"></label>
+    <div class="tool-row" id="row-penThin">
+      <div class="tool-label" style="color:#4cc9f0">● Lápiz fino</div>
+      <div class="inputs">
+        <label>min<input type="number" id="min-penThin" step="0.1" value="0"></label>
+        <label>max<input type="number" id="max-penThin" step="0.1" value="1.2"></label>
       </div>
-      <button class="btn-rd" data-tool="penThin">▶ Leer</button>
+      <button class="btn-read" data-tool="penThin">▶ Leer</button>
       <div class="live" id="live-penThin"></div>
     </div>
 
-    <div class="tsec" id="sec-penThick">
-      <div class="tn ck">● Lápiz grueso</div>
-      <div class="rr">
-        <label>min<input type="number" id="min-penThick" step="0.1" min="0" value="1.4"></label>
-        <label>max<input type="number" id="max-penThick" step="0.1" min="0" value="2.8"></label>
+    <div class="tool-row" id="row-penThick">
+      <div class="tool-label" style="color:#f8961e">● Lápiz grueso</div>
+      <div class="inputs">
+        <label>min<input type="number" id="min-penThick" step="0.1" value="1.4"></label>
+        <label>max<input type="number" id="max-penThick" step="0.1" value="2.8"></label>
       </div>
-      <button class="btn-rd" data-tool="penThick">▶ Leer</button>
+      <button class="btn-read" data-tool="penThick">▶ Leer</button>
       <div class="live" id="live-penThick"></div>
     </div>
 
-    <div class="tsec" id="sec-eraser">
-      <div class="tn ce">● Palma / Borrador</div>
-      <div class="rr">
-        <label>min<input type="number" id="min-eraser" step="0.1" min="0" value="13"></label>
-        <label>max<input type="number" id="max-eraser" step="0.1" min="0" value="20"></label>
+    <div class="tool-row" id="row-eraser">
+      <div class="tool-label" style="color:#f72585">● Palma</div>
+      <div class="inputs">
+        <label>min<input type="number" id="min-eraser" step="0.1" value="13"></label>
+        <label>max<input type="number" id="max-eraser" step="0.1" value="20"></label>
       </div>
-      <button class="btn-rd" data-tool="eraser">▶ Leer</button>
+      <button class="btn-read" data-tool="eraser">▶ Leer</button>
       <div class="live" id="live-eraser"></div>
     </div>
 
-    <button id="btn-rst">↺ Restaurar defaults</button>
+    <button id="btn-reset">↺ Defaults</button>
   </div>
 </div>
 
 <script type="module">
-import { PenDetector } from './index.js';
+import { PenDetector } from './pen-detector.js';
 
-// ─── Canvas setup ──────────────────────────────────────────────────────────
+// ── canvas ────────────────────────────────────────────────────────────────
 const wrap = document.getElementById('wrap');
-const dc   = document.getElementById('dc');
-const dctx = dc.getContext('2d');
-const oc   = document.getElementById('oc');
-const octx = oc.getContext('2d');
+const dc = document.getElementById('dc'), dctx = dc.getContext('2d');
+const cc = document.getElementById('cc'), cctx = cc.getContext('2d');
 
 function resize() {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = devicePixelRatio || 1;
   const w = wrap.clientWidth, h = wrap.clientHeight;
-  [dc, oc].forEach(c => {
-    c.width  = w * dpr; c.height = h * dpr;
+  [dc, cc].forEach(c => {
+    c.width = w * dpr; c.height = h * dpr;
     c.style.width = w + 'px'; c.style.height = h + 'px';
     c.getContext('2d').scale(dpr, dpr);
   });
@@ -155,229 +144,196 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// ─── PenDetector — recreated on mode switch ────────────────────────────────
-let detector = null;
-let currentMode = 'ir';
+// ── detector ──────────────────────────────────────────────────────────────
+let det = null, mode = 'ir', prev = null;
 
-function createDetector(mode) {
-  if (detector) detector.destroy();
-  detector = new PenDetector({ element: dc, mode });
-  currentMode = mode;
-  attachEvents();
-  if (mode === 'ir') syncInputs(detector.thresholds);
-  document.body.classList.toggle('ink-mode', mode === 'ink');
-  // update label for raw metric field
-  document.querySelector('#d-rad').previousElementSibling.textContent =
-    mode === 'ir' ? 'Radio avg' : 'Presión raw';
-}
-
-// Mode selector buttons
-document.getElementById('btn-ir').addEventListener('click', () => {
-  if (currentMode === 'ir') return;
-  document.getElementById('btn-ir').classList.add('active');
-  document.getElementById('btn-ink').classList.remove('active');
-  createDetector('ir');
-});
-document.getElementById('btn-ink').addEventListener('click', () => {
-  if (currentMode === 'ink') return;
-  document.getElementById('btn-ink').classList.add('active');
-  document.getElementById('btn-ir').classList.remove('active');
-  createDetector('ink');
-});
-
-// ─── Drawing ───────────────────────────────────────────────────────────────
 const STYLE = {
-  penThin:  { size: 2,  color: '#4cc9f0', erase: false },
-  penThick: { size: 14, color: '#f8961e', erase: false },
-  eraser:   { size: 60, color: null,      erase: true  },
-  none:     { size: 2,  color: '#888',    erase: false }, // fallback visible
+  penThin:  { w: 2,  color: '#4cc9f0' },
+  penThick: { w: 14, color: '#f8961e' },
+  eraser:   { w: 50, color: null      },
+  none:     { w: 3,  color: '#555'    },
 };
 
-let prev = null; // last point for drawing
+function start(m) {
+  if (det) det.destroy();
+  mode = m;
+  prev = null;
+  det = new PenDetector({ element: dc, mode: m });
 
-function drawSegment(from, to, evt) {
+  det.on('pendown', e => {
+    setDebug(e);
+    prev = { x: e.x, y: e.y };
+  });
+
+  det.on('penmove', e => {
+    setDebug(e);
+    if (prev) draw(prev, e);
+    prev = { x: e.x, y: e.y };
+  });
+
+  det.on('penup', () => {
+    prev = null;
+    clearDebug();
+  });
+}
+
+function draw(from, evt) {
   const s = STYLE[evt.tool] || STYLE.none;
-  if (!s.size) return;
   dctx.beginPath();
   dctx.moveTo(from.x, from.y);
-  dctx.lineTo(to.x, to.y);
-  dctx.lineWidth = s.size * (0.7 + evt.pressure * 0.6); // pressure → width
-  dctx.lineCap  = 'round';
-  dctx.lineJoin = 'round';
-  dctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
-  dctx.strokeStyle = s.color || 'rgba(0,0,0,1)';
+  dctx.lineTo(evt.x, evt.y);
+  dctx.lineWidth = s.w * (0.6 + evt.pressure * 0.8);
+  dctx.lineCap = dctx.lineJoin = 'round';
+  if (s.color) {
+    dctx.globalCompositeOperation = 'source-over';
+    dctx.strokeStyle = s.color;
+  } else {
+    dctx.globalCompositeOperation = 'destination-out';
+    dctx.strokeStyle = 'rgba(0,0,0,1)';
+  }
   dctx.stroke();
   dctx.globalCompositeOperation = 'source-over';
 }
 
-function attachEvents() {
-  detector.on('pendown', evt => {
-    updateDebug(evt);
-    prev = { x: evt.x, y: evt.y };
-  });
-
-  detector.on('penmove', evt => {
-    updateDebug(evt);
-    if (prev) drawSegment(prev, evt, evt);
-    prev = { x: evt.x, y: evt.y };
-    drawOverlay(evt);
-  });
-
-  detector.on('penup', () => {
-    prev = null;
-    clearOverlay();
-    resetDebug();
-  });
-
-  // Calibration events (IR only)
-  detector.on('calibration:reading', ({ tool, current, min, max, count, preview }) => {
-    document.getElementById('live-'+tool).textContent =
-      `actual: ${current.toFixed(2)}\nmin: ${min.toFixed(2)}  max: ${max.toFixed(2)}\n`+
-      `→ guardará: ${preview.min} – ${preview.max}\n(${count} lecturas)`;
-    document.getElementById('min-'+tool).value = preview.min;
-    document.getElementById('max-'+tool).value = preview.max;
-  });
-
-  detector.on('calibration:done', ({ tool, min, max, readings }) => {
-    document.getElementById('live-'+tool).textContent =
-      `✓ Guardado: ${min} – ${max}\n(${readings} lecturas)`;
-  });
+// ── debug bar ─────────────────────────────────────────────────────────────
+function setDebug(e) {
+  const tb = document.getElementById('tool');
+  tb.textContent = e.tool;
+  tb.className   = 't-' + e.tool;
+  document.getElementById('dbg').textContent =
+    `pts:${e.pointCount} · metric:${e.metric.toFixed(2)} · pressure:${e.pressure.toFixed(2)}`;
+}
+function clearDebug() {
+  const tb = document.getElementById('tool');
+  tb.textContent = 'Ninguno'; tb.className = '';
+  document.getElementById('dbg').textContent = 'pts:— · metric:— · pressure:—';
 }
 
-// ─── Overlay canvas (debug dots + bbox) ────────────────────────────────────
-function drawOverlay(evt) {
-  const w = oc.width / (window.devicePixelRatio || 1);
-  const h = oc.height / (window.devicePixelRatio || 1);
-  octx.clearRect(0, 0, w, h);
+// ── mode buttons ──────────────────────────────────────────────────────────
+document.getElementById('btn-ir').addEventListener('click', () => {
+  document.getElementById('btn-ir').classList.add('on');
+  document.getElementById('btn-ink').classList.remove('on');
+  document.getElementById('btn-cfg').style.display = '';
+  start('ir');
+  syncInputs();
+});
+document.getElementById('btn-ink').addEventListener('click', () => {
+  document.getElementById('btn-ink').classList.add('on');
+  document.getElementById('btn-ir').classList.remove('on');
+  document.getElementById('btn-cfg').style.display = 'none';
+  document.getElementById('cal').classList.remove('open');
+  document.getElementById('btn-cfg').classList.remove('on');
+  start('ink');
+});
 
-  // Draw each raw touch point
-  if (evt.raw?.touches) {
-    for (const t of evt.raw.touches) {
-      octx.beginPath();
-      octx.arc(t.x, t.y, 4, 0, Math.PI * 2);
-      octx.fillStyle = '#ffffff55';
-      octx.fill();
-      if (t.radiusX > 1) {
-        octx.beginPath();
-        octx.ellipse(t.x, t.y, t.radiusX, t.radiusY || t.radiusX, 0, 0, Math.PI * 2);
-        octx.strokeStyle = '#ffffff33';
-        octx.lineWidth = 1;
-        octx.stroke();
+// ── calibration panel ─────────────────────────────────────────────────────
+let calTool = null, calMin = Infinity, calMax = -Infinity, calCount = 0;
+const TOL = 0.2;
+
+document.getElementById('btn-cfg').addEventListener('click', () => {
+  document.getElementById('cal').classList.toggle('open');
+  document.getElementById('btn-cfg').classList.toggle('on');
+});
+
+document.querySelectorAll('.btn-read').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tool = btn.dataset.tool;
+    if (btn.classList.contains('rec')) {
+      // save
+      if (calCount > 0) {
+        const newThr = {};
+        newThr[tool] = {
+          min: Math.max(0, parseFloat((calMin - TOL).toFixed(2))),
+          max: parseFloat((calMax + TOL).toFixed(2)),
+        };
+        det.setThresholds(newThr);
+        saveThresholds();
+        syncInputs();
+        document.getElementById('live-' + tool).textContent =
+          `✓ ${newThr[tool].min} – ${newThr[tool].max}`;
       }
+      calTool = null; calMin = Infinity; calMax = -Infinity; calCount = 0;
+      btn.textContent = '▶ Leer'; btn.classList.remove('rec');
+      document.getElementById('row-' + tool).classList.remove('active');
+      document.querySelectorAll('.btn-read').forEach(b => b.disabled = false);
+    } else {
+      calTool = tool; calMin = Infinity; calMax = -Infinity; calCount = 0;
+      btn.textContent = '■ Guardar'; btn.classList.add('rec');
+      document.getElementById('row-' + tool).classList.add('active');
+      document.getElementById('live-' + tool).textContent = 'Toca con el instrumento…';
+      document.querySelectorAll('.btn-read').forEach(b => { if (b !== btn) b.disabled = true; });
+
+      // hook into penmove to record metric during calibration
+      det.off('penmove', recordCal);
+      det.on('penmove', recordCal);
+      det.off('pendown', recordCal);
+      det.on('pendown', recordCal);
     }
-  }
+  });
+});
 
-  // Bounding box
-  const b = evt.bbox;
-  if (b && (b.w > 4 || b.h > 4)) {
-    octx.strokeStyle = '#ffffff33';
-    octx.lineWidth = 1;
-    octx.setLineDash([3, 3]);
-    octx.strokeRect(b.x, b.y, b.w, b.h);
-    octx.setLineDash([]);
-    octx.fillStyle = '#aaa';
-    octx.font = '10px monospace';
-    octx.fillText(`${Math.round(b.w)}×${Math.round(b.h)}`, b.x + 2, b.y - 3);
-  }
+function recordCal(e) {
+  if (!calTool) return;
+  if (e.metric < calMin) calMin = e.metric;
+  if (e.metric > calMax) calMax = e.metric;
+  calCount++;
+  document.getElementById('live-' + calTool).textContent =
+    `actual: ${e.metric.toFixed(2)}\n` +
+    `rango: ${calMin.toFixed(2)} – ${calMax.toFixed(2)}\n` +
+    `(${calCount} lecturas)`;
+  document.getElementById('min-' + calTool).value = Math.max(0, calMin - TOL).toFixed(2);
+  document.getElementById('max-' + calTool).value = (calMax + TOL).toFixed(2);
 }
 
-function clearOverlay() {
-  const w = oc.width / (window.devicePixelRatio || 1);
-  const h = oc.height / (window.devicePixelRatio || 1);
-  octx.clearRect(0, 0, w, h);
-}
-
-// ─── Debug bar ─────────────────────────────────────────────────────────────
-function updateDebug(evt) {
-  const raw = evt.raw?.metric ?? evt.raw?.pressure ?? 0;
-  document.getElementById('d-pts').textContent = evt.pointCount;
-  document.getElementById('d-rad').textContent = raw.toFixed(2);
-  document.getElementById('d-prs').textContent = evt.pressure.toFixed(2);
-  document.getElementById('d-tlt').textContent = evt.tiltMagnitude.toFixed(2);
-  document.getElementById('d-spd').textContent = evt.speed.toFixed(2);
-  document.getElementById('d-dir').textContent = Math.round(evt.direction);
-  const mb = document.getElementById('mode-badge');
-  mb.textContent = evt.tool;
-  mb.className   = 'm-' + evt.tool;
-}
-function resetDebug() {
-  ['d-pts','d-rad','d-prs','d-tlt','d-spd','d-dir'].forEach(id =>
-    document.getElementById(id).textContent = '0');
-  const mb = document.getElementById('mode-badge');
-  mb.textContent = 'Ninguno'; mb.className = 'm-none';
-}
-
-// ─── Calibration UI (IR only) ──────────────────────────────────────────────
-function syncInputs(thr) {
-  if (!thr) return;
-  for (const tool of ['penThin','penThick','eraser']) {
-    document.getElementById('min-'+tool).value = thr[tool].min;
-    document.getElementById('max-'+tool).value = thr[tool].max;
-  }
-}
-
-for (const tool of ['penThin','penThick','eraser']) {
-  for (const b of ['min','max']) {
-    document.getElementById(b+'-'+tool).addEventListener('input', () => {
-      if (currentMode !== 'ir') return;
-      const v = parseFloat(document.getElementById(b+'-'+tool).value);
-      if (!isNaN(v)) {
-        const t = { ...detector.thresholds };
-        t[tool] = { ...t[tool], [b]: v };
-        detector.setThresholds(t);
+// manual input edits
+for (const tool of ['penThin', 'penThick', 'eraser']) {
+  for (const b of ['min', 'max']) {
+    document.getElementById(b + '-' + tool).addEventListener('input', () => {
+      const v = parseFloat(document.getElementById(b + '-' + tool).value);
+      if (!isNaN(v) && det) {
+        const upd = {}; upd[tool] = { ...det.thresholds[tool], [b]: v };
+        det.setThresholds(upd);
+        saveThresholds();
       }
     });
   }
 }
 
-document.querySelectorAll('.btn-rd').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (currentMode !== 'ir') return;
-    const tool = btn.dataset.tool;
-    if (btn.classList.contains('rec')) {
-      const result = detector.stopCalibration();
-      btn.textContent = '▶ Leer';
-      btn.classList.remove('rec');
-      document.getElementById('sec-'+tool).classList.remove('cal');
-      document.getElementById('cal-banner').classList.remove('on');
-      document.querySelectorAll('.btn-rd').forEach(b => b.disabled = false);
-      if (result) syncInputs(detector.thresholds);
-    } else {
-      detector.startCalibration(tool);
-      btn.textContent = '■ Guardar';
-      btn.classList.add('rec');
-      document.getElementById('sec-'+tool).classList.add('cal');
-      document.getElementById('cal-banner').classList.add('on');
-      document.getElementById('live-'+tool).textContent = 'Toca con el instrumento…';
-      document.querySelectorAll('.btn-rd').forEach(b => { if (b !== btn) b.disabled = true; });
-    }
-  });
+// ── persistence ───────────────────────────────────────────────────────────
+function saveThresholds() {
+  try { localStorage.setItem('pd-thr', JSON.stringify(det.thresholds)); } catch {}
+}
+function loadThresholds() {
+  try {
+    const d = JSON.parse(localStorage.getItem('pd-thr'));
+    if (d?.penThin && d?.penThick && d?.eraser) return d;
+  } catch {}
+  return null;
+}
+function syncInputs() {
+  if (!det || mode !== 'ir') return;
+  const t = det.thresholds;
+  for (const tool of ['penThin', 'penThick', 'eraser']) {
+    document.getElementById('min-' + tool).value = t[tool].min;
+    document.getElementById('max-' + tool).value = t[tool].max;
+  }
+}
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  det.setThresholds({ penThin:{min:0,max:1.2}, penThick:{min:1.4,max:2.8}, eraser:{min:13,max:20} });
+  saveThresholds();
+  syncInputs();
 });
 
-// Sidebar toggle
-const sb = document.getElementById('sb');
-document.getElementById('btn-cfg').addEventListener('click', () => {
-  sb.classList.toggle('hidden');
-  document.getElementById('btn-cfg').classList.toggle('on');
-  setTimeout(resize, 220);
-});
-
-// Clear
 document.getElementById('btn-clr').addEventListener('click', () => {
-  const w = dc.width / (window.devicePixelRatio||1);
-  const h = dc.height / (window.devicePixelRatio||1);
+  const w = dc.width / (devicePixelRatio||1), h = dc.height / (devicePixelRatio||1);
   dctx.clearRect(0, 0, w, h);
 });
 
-// Reset IR defaults
-document.getElementById('btn-rst').addEventListener('click', () => {
-  if (currentMode !== 'ir') return;
-  detector.setThresholds({ penThin:{min:0,max:1.2}, penThick:{min:1.4,max:2.8}, eraser:{min:13,max:20} });
-  syncInputs(detector.thresholds);
-});
-
-// ─── Start with IR mode ────────────────────────────────────────────────────
-createDetector('ir');
+// ── init ──────────────────────────────────────────────────────────────────
+const saved = loadThresholds();
+start('ir');
+if (saved) { det.setThresholds(saved); syncInputs(); }
 </script>
 </body>
 </html>
