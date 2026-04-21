@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Pen Touch Detection</title>
+  <title>Touch Area Detection</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -19,52 +19,38 @@
 
     #debug {
       background: #16213e;
-      padding: 10px 16px;
+      padding: 8px 14px;
       display: flex;
-      gap: 20px;
+      gap: 18px;
       align-items: center;
       flex-wrap: wrap;
       border-bottom: 2px solid #0f3460;
       z-index: 10;
       user-select: none;
+      min-height: 54px;
     }
 
-    #debug .label {
-      font-size: 11px;
-      color: #888;
-      text-transform: uppercase;
-    }
-
-    #debug .value {
-      font-size: 22px;
-      font-weight: bold;
-    }
+    .dbg-block { display: flex; flex-direction: column; }
+    .dbg-label { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: .5px; }
+    .dbg-value { font-size: 20px; font-weight: bold; line-height: 1.2; }
 
     #mode-indicator {
-      padding: 6px 14px;
+      padding: 5px 12px;
       border-radius: 20px;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: bold;
-      transition: all 0.15s;
+      transition: background .1s, color .1s;
     }
+    .mode-none      { background:#333;    color:#777; }
+    .mode-pen-thin  { background:#0077b6; color:#fff; }
+    .mode-pen-thick { background:#f8961e; color:#000; }
+    .mode-eraser    { background:#f72585; color:#fff; }
 
-    .mode-none     { background: #333; color: #888; }
-    .mode-pen-thin { background: #0077b6; color: #fff; }
-    .mode-pen-thick{ background: #4cc9f0; color: #000; }
-    .mode-eraser   { background: #f72585; color: #fff; }
-
-    #touch-list {
-      font-size: 11px;
-      color: #aaa;
-      max-width: 400px;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
+    #bbox-info { font-size: 12px; color: #aaa; }
 
     #btn-clear {
       margin-left: auto;
-      padding: 6px 14px;
+      padding: 5px 12px;
       background: #e63946;
       color: #fff;
       border: none;
@@ -73,235 +59,286 @@
       font-family: monospace;
     }
 
-    canvas {
+    #canvas-wrap {
       flex: 1;
-      display: block;
-      touch-action: none;
-      cursor: crosshair;
+      position: relative;
+      overflow: hidden;
     }
 
-    #cursor-indicator {
-      position: fixed;
-      pointer-events: none;
-      border-radius: 50%;
-      border: 2px solid rgba(255,255,255,0.5);
-      transform: translate(-50%, -50%);
-      transition: width 0.1s, height 0.1s, border-color 0.1s;
-      display: none;
+    canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      touch-action: none;
     }
+
+    /* capa de dibujo encima del canvas de debug */
+    #draw-canvas { z-index: 2; }
+    #debug-canvas { z-index: 1; background: #111; }
   </style>
 </head>
 <body>
 
 <div id="debug">
-  <div>
-    <div class="label">Puntos tocados</div>
-    <div class="value" id="touch-count">0</div>
+  <div class="dbg-block">
+    <span class="dbg-label">Puntos</span>
+    <span class="dbg-value" id="d-count">0</span>
   </div>
-  <div>
-    <div class="label">Modo detectado</div>
-    <div id="mode-indicator" class="mode-none">Ninguno</div>
+  <div class="dbg-block">
+    <span class="dbg-label">Área bbox (px²)</span>
+    <span class="dbg-value" id="d-area">0</span>
   </div>
-  <div>
-    <div class="label">Tamaño brush</div>
-    <div class="value" id="brush-size">—</div>
+  <div class="dbg-block">
+    <span class="dbg-label">BBox W × H</span>
+    <span class="dbg-value" id="d-bbox">— × —</span>
   </div>
-  <div id="touch-list">Sin toques activos</div>
+  <div class="dbg-block">
+    <span class="dbg-label">radiusX / Y</span>
+    <span class="dbg-value" id="d-radius">— / —</span>
+  </div>
+  <div id="mode-indicator" class="mode-none">Ninguno</div>
+  <div id="bbox-info"></div>
   <button id="btn-clear">Limpiar</button>
 </div>
 
-<canvas id="canvas"></canvas>
-<div id="cursor-indicator"></div>
+<div id="canvas-wrap">
+  <!-- canvas de fondo: dibuja el bounding box en debug -->
+  <canvas id="debug-canvas"></canvas>
+  <!-- canvas de dibujo real -->
+  <canvas id="draw-canvas"></canvas>
+</div>
 
 <script>
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-  const elCount = document.getElementById('touch-count');
-  const elMode = document.getElementById('mode-indicator');
-  const elSize = document.getElementById('brush-size');
-  const elList = document.getElementById('touch-list');
-  const cursor = document.getElementById('cursor-indicator');
+// ─── Canvases ───────────────────────────────────────────────────────────────
+const wrap   = document.getElementById('canvas-wrap');
+const dc     = document.getElementById('draw-canvas');
+const dctx   = dc.getContext('2d');
+const bc     = document.getElementById('debug-canvas');
+const bctx   = bc.getContext('2d');
 
-  // Ajusta canvas al tamaño real
-  function resize() {
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  [dc, bc].forEach(c => {
+    c.width  = w * dpr;
+    c.height = h * dpr;
+    c.style.width  = w + 'px';
+    c.style.height = h + 'px';
+    c.getContext('2d').scale(dpr, dpr);
+  });
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Umbrales de área (px²) ─────────────────────────────────────────────────
+// Ajusta según tu pantalla IR. Estos son puntos de partida.
+const AREA_THRESHOLDS = {
+  penThin:  500,    // área < 500 px²  → lápiz fino
+  penThick: 8000,   // área < 8000 px² → lápiz grueso / dedo
+  // área >= 8000   → borrador / palma
+};
+
+const MODES = {
+  none:     { label: 'Ninguno',      cls: 'mode-none',      size: 0,  color: null,      erase: false },
+  penThin:  { label: 'Lápiz fino',   cls: 'mode-pen-thin',  size: 2,  color: '#4cc9f0', erase: false },
+  penThick: { label: 'Lápiz grueso', cls: 'mode-pen-thick', size: 14, color: '#f8961e', erase: false },
+  eraser:   { label: 'Borrador',     cls: 'mode-eraser',    size: 60, color: null,      erase: true  },
+};
+
+function detectMode(area) {
+  if (area === 0)                         return 'none';
+  if (area < AREA_THRESHOLDS.penThin)     return 'penThin';
+  if (area < AREA_THRESHOLDS.penThick)    return 'penThick';
+  return 'eraser';
+}
+
+// ─── Calcular bounding box de todos los touches activos ─────────────────────
+function getBBox(touches) {
+  if (!touches.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  Array.from(touches).forEach(t => {
+    const rect = dc.getBoundingClientRect();
+    const x = t.clientX - rect.left;
+    const y = t.clientY - rect.top;
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  });
+  const w = maxX - minX;
+  const h = maxY - minY;
+  // Para punto único usamos un área mínima representativa del contacto físico
+  // Si el hardware reporta radius, lo usamos; si no, asumimos 10px de radio
+  return { minX, minY, maxX, maxY, w, h, area: Math.max(w * h, 1) };
+}
+
+// Promedio de radiusX/Y de todos los touches (si el hardware lo reporta)
+function getAvgRadius(touches) {
+  let rx = 0, ry = 0;
+  Array.from(touches).forEach(t => { rx += (t.radiusX || 0); ry += (t.radiusY || 0); });
+  const n = touches.length;
+  return { rx: rx / n, ry: ry / n };
+}
+
+// ─── Dibujo ─────────────────────────────────────────────────────────────────
+const paths = {}; // { [identifier]: { x, y } }
+
+function canvasPos(touch) {
+  const rect = dc.getBoundingClientRect();
+  return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+}
+
+function drawStep(from, to, mode) {
+  const m = MODES[mode];
+  dctx.beginPath();
+  dctx.moveTo(from.x, from.y);
+  dctx.lineTo(to.x, to.y);
+  dctx.lineWidth   = m.size;
+  dctx.lineCap     = 'round';
+  dctx.lineJoin    = 'round';
+  if (m.erase) {
+    dctx.globalCompositeOperation = 'destination-out';
+    dctx.strokeStyle = 'rgba(0,0,0,1)';
+  } else {
+    dctx.globalCompositeOperation = 'source-over';
+    dctx.strokeStyle = m.color;
   }
-  resize();
-  window.addEventListener('resize', resize);
+  dctx.stroke();
+  dctx.globalCompositeOperation = 'source-over';
+}
 
-  // ── Configuración de umbrales ──────────────────────────────────────────────
-  // Ajusta estos valores según tu pantalla táctil
-  const THRESHOLDS = {
-    penThin:  1,   // exactamente 1 punto → lápiz fino
-    penThick: 2,   // 2–3 puntos          → lápiz grueso / dedo
-    eraser:   4,   // 4+ puntos           → palma / borrador
-  };
+// ─── Debug overlay: dibuja bounding box en canvas de debug ─────────────────
+function drawDebugOverlay(touches, bbox, mode) {
+  const w = bc.width / (window.devicePixelRatio || 1);
+  const h = bc.height / (window.devicePixelRatio || 1);
+  bctx.clearRect(0, 0, w, h);
 
-  const MODES = {
-    none:     { label: 'Ninguno',      cls: 'mode-none',      size: 0,   color: null,      erase: false },
-    penThin:  { label: 'Lápiz fino',   cls: 'mode-pen-thin',  size: 2,   color: '#4cc9f0', erase: false },
-    penThick: { label: 'Lápiz grueso', cls: 'mode-pen-thick', size: 12,  color: '#f8961e', erase: false },
-    eraser:   { label: 'Borrador',     cls: 'mode-eraser',    size: 60,  color: null,      erase: true  },
-  };
+  if (!touches.length) return;
 
-  function detectMode(count) {
-    if (count === 0)                          return 'none';
-    if (count === THRESHOLDS.penThin)         return 'penThin';
-    if (count < THRESHOLDS.eraser)            return 'penThick';
-    return 'eraser';
+  const m = MODES[mode];
+
+  // Puntos individuales
+  Array.from(touches).forEach(t => {
+    const rect = dc.getBoundingClientRect();
+    const x = t.clientX - rect.left;
+    const y = t.clientY - rect.top;
+
+    bctx.beginPath();
+    bctx.arc(x, y, 6, 0, Math.PI * 2);
+    bctx.fillStyle = m.erase ? '#f72585' : (m.color || '#fff');
+    bctx.fill();
+
+    // Si hay radiusX/Y real del hardware
+    if (t.radiusX > 1 || t.radiusY > 1) {
+      bctx.beginPath();
+      bctx.ellipse(x, y, t.radiusX, t.radiusY, 0, 0, Math.PI * 2);
+      bctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      bctx.lineWidth = 1;
+      bctx.stroke();
+    }
+  });
+
+  // Bounding box
+  if (bbox && (bbox.w > 5 || bbox.h > 5)) {
+    bctx.strokeStyle = m.erase ? '#f72585aa' : '#ffffff55';
+    bctx.lineWidth = 1;
+    bctx.setLineDash([4, 4]);
+    bctx.strokeRect(bbox.minX, bbox.minY, bbox.w, bbox.h);
+    bctx.setLineDash([]);
+
+    // Etiqueta área
+    bctx.fillStyle = '#fff';
+    bctx.font = '11px monospace';
+    bctx.fillText(
+      `${Math.round(bbox.w)}×${Math.round(bbox.h)} = ${Math.round(bbox.area)}px²`,
+      bbox.minX + 4, bbox.minY - 4
+    );
   }
+}
 
-  // ── Estado de dibujo ───────────────────────────────────────────────────────
-  const paths = {};   // un path por cada touch.identifier
+// ─── Actualizar debug UI ─────────────────────────────────────────────────────
+function updateDebug(touches) {
+  const bbox   = getBBox(touches);
+  const area   = bbox ? bbox.area : 0;
+  const mode   = detectMode(area);
+  const m      = MODES[mode];
+  const { rx, ry } = getAvgRadius(touches);
 
-  function getCanvasPos(touch) {
-    const rect = canvas.getBoundingClientRect();
-    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
-  }
+  document.getElementById('d-count').textContent = touches.length;
+  document.getElementById('d-area').textContent  = Math.round(area);
+  document.getElementById('d-bbox').textContent  = bbox
+    ? `${Math.round(bbox.w)} × ${Math.round(bbox.h)}`
+    : '— × —';
+  document.getElementById('d-radius').textContent = touches.length
+    ? `${rx.toFixed(1)} / ${ry.toFixed(1)}`
+    : '— / —';
 
-  function drawStep(fromPos, toPos, mode) {
-    const m = MODES[mode];
-    ctx.beginPath();
-    ctx.moveTo(fromPos.x, fromPos.y);
-    ctx.lineTo(toPos.x, toPos.y);
-    ctx.lineWidth = m.size;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+  const mi = document.getElementById('mode-indicator');
+  mi.textContent = m.label;
+  mi.className   = m.cls;
 
-    if (m.erase) {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
+  drawDebugOverlay(touches, bbox, mode);
+  return { mode, bbox };
+}
+
+// ─── Touch events ────────────────────────────────────────────────────────────
+dc.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const { mode } = updateDebug(e.touches);
+  Array.from(e.changedTouches).forEach(t => {
+    paths[t.identifier] = { pos: canvasPos(t), mode };
+  });
+}, { passive: false });
+
+dc.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const { mode } = updateDebug(e.touches);
+
+  Array.from(e.changedTouches).forEach(t => {
+    const newPos = canvasPos(t);
+    const entry  = paths[t.identifier];
+    if (entry) {
+      // Usa el modo actual (puede cambiar en medio del gesto)
+      entry.mode = mode;
+      drawStep(entry.pos, newPos, mode);
+      entry.pos = newPos;
     } else {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = m.color;
+      paths[t.identifier] = { pos: newPos, mode };
     }
-    ctx.stroke();
-    ctx.globalCompositeOperation = 'source-over';
-  }
-
-  // ── Actualiza debug UI ─────────────────────────────────────────────────────
-  function updateDebug(touches) {
-    const count = touches.length;
-    const modeName = detectMode(count);
-    const m = MODES[modeName];
-
-    elCount.textContent = count;
-    elMode.textContent = m.label;
-    elMode.className = m.cls;
-    elSize.textContent = m.size > 0 ? m.size + 'px' : '—';
-
-    if (count === 0) {
-      elList.textContent = 'Sin toques activos';
-    } else {
-      const info = Array.from(touches).map(t =>
-        `#${t.identifier} (${Math.round(t.clientX)},${Math.round(t.clientY)})`
-      ).join('  |  ');
-      elList.textContent = info;
-    }
-  }
-
-  function showCursor(x, y, mode) {
-    const m = MODES[mode];
-    const size = Math.max(m.size, 4);
-    cursor.style.display = 'block';
-    cursor.style.width  = size + 'px';
-    cursor.style.height = size + 'px';
-    cursor.style.left   = x + 'px';
-    cursor.style.top    = y + 'px';
-    cursor.style.borderColor = m.erase ? '#f72585' : (m.color || '#fff');
-  }
-
-  function hideCursor() { cursor.style.display = 'none'; }
-
-  // ── Eventos táctiles ───────────────────────────────────────────────────────
-  canvas.addEventListener('touchstart', e => {
-    e.preventDefault();
-    const count = e.touches.length;
-    const mode = detectMode(count);
-
-    // Si cambia a borrador, cancela paths de lápiz activos y viceversa
-    if (mode === 'eraser') {
-      Object.keys(paths).forEach(id => delete paths[id]);
-    }
-
-    Array.from(e.changedTouches).forEach(t => {
-      paths[t.identifier] = { pos: getCanvasPos(t), mode };
-    });
-
-    updateDebug(e.touches);
-  }, { passive: false });
-
-  canvas.addEventListener('touchmove', e => {
-    e.preventDefault();
-    const count = e.touches.length;
-    const mode = detectMode(count);
-
-    Array.from(e.changedTouches).forEach(t => {
-      const newPos = getCanvasPos(t);
-      const entry = paths[t.identifier];
-      if (entry) {
-        drawStep(entry.pos, newPos, entry.mode);
-        entry.pos = newPos;
-      }
-      // Cursor visual en el primer toque
-      if (t === e.changedTouches[0]) showCursor(t.clientX, t.clientY, mode);
-    });
-
-    updateDebug(e.touches);
-  }, { passive: false });
-
-  canvas.addEventListener('touchend', e => {
-    e.preventDefault();
-    Array.from(e.changedTouches).forEach(t => delete paths[t.identifier]);
-    updateDebug(e.touches);
-    if (e.touches.length === 0) hideCursor();
-  }, { passive: false });
-
-  canvas.addEventListener('touchcancel', e => {
-    Array.from(e.changedTouches).forEach(t => delete paths[t.identifier]);
-    updateDebug(e.touches);
-    hideCursor();
-  }, { passive: false });
-
-  // ── Fallback mouse (para probar en desktop) ────────────────────────────────
-  let mouseDown = false;
-  let lastMousePos = null;
-
-  canvas.addEventListener('mousedown', e => {
-    mouseDown = true;
-    const rect = canvas.getBoundingClientRect();
-    lastMousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    elCount.textContent = '1 (mouse)';
-    elMode.textContent = MODES.penThin.label;
-    elMode.className = MODES.penThin.cls;
-    elSize.textContent = MODES.penThin.size + 'px';
-    elList.textContent = `mouse (${Math.round(e.clientX)},${Math.round(e.clientY)})`;
   });
+}, { passive: false });
 
-  canvas.addEventListener('mousemove', e => {
-    if (!mouseDown) return;
-    const rect = canvas.getBoundingClientRect();
-    const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    drawStep(lastMousePos, pos, 'penThin');
-    lastMousePos = pos;
-    elList.textContent = `mouse (${Math.round(e.clientX)},${Math.round(e.clientY)})`;
-  });
+dc.addEventListener('touchend', e => {
+  e.preventDefault();
+  Array.from(e.changedTouches).forEach(t => delete paths[t.identifier]);
+  updateDebug(e.touches);
+}, { passive: false });
 
-  canvas.addEventListener('mouseup', () => {
-    mouseDown = false; lastMousePos = null;
-    elCount.textContent = '0'; elMode.textContent = 'Ninguno';
-    elMode.className = 'mode-none'; elSize.textContent = '—';
-    elList.textContent = 'Sin toques activos';
-  });
+dc.addEventListener('touchcancel', e => {
+  Array.from(e.changedTouches).forEach(t => delete paths[t.identifier]);
+  updateDebug(e.touches);
+}, { passive: false });
 
-  // ── Limpiar canvas ─────────────────────────────────────────────────────────
-  document.getElementById('btn-clear').addEventListener('click', () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  });
+// ─── Mouse fallback (desktop) ────────────────────────────────────────────────
+let mouseDown = false, lastMouse = null;
+dc.addEventListener('mousedown', e => {
+  mouseDown = true;
+  const rect = dc.getBoundingClientRect();
+  lastMouse = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+});
+dc.addEventListener('mousemove', e => {
+  if (!mouseDown) return;
+  const rect = dc.getBoundingClientRect();
+  const pos  = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  drawStep(lastMouse, pos, 'penThin');
+  lastMouse = pos;
+});
+dc.addEventListener('mouseup', () => { mouseDown = false; lastMouse = null; });
+
+// ─── Limpiar ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-clear').addEventListener('click', () => {
+  const w = dc.width  / (window.devicePixelRatio || 1);
+  const h = dc.height / (window.devicePixelRatio || 1);
+  dctx.clearRect(0, 0, w, h);
+});
 </script>
 </body>
 </html>
