@@ -10,7 +10,7 @@
  *   thresholds — override default IR ranges
  *   smooth    — { xy: 0..1, pressure: 0..1 }  0=raw, 1=max smooth (default: xy=0.2, pressure=0.6)
  */
-export const VERSION = '1.0';
+export const VERSION = '1.1';
 
 const DEFAULTS = {
   penThin:  { min: 0,   max: 1.2 },
@@ -90,19 +90,22 @@ export class PenDetector {
     const t0 = ts[0];
     const rx = t0.radiusX || 0, ry = t0.radiusY || 0;
 
-    const rawX = cx / n, rawY = cy / n;
+    const x  = cx / n, y = cy / n;
 
-    if (e.type === 'touchstart' && this._strokeTool === null) {
+    // Only classify and emit 'pendown' on the FIRST touch of a stroke.
+    // Additional touchstart events (tilt, accidental finger) emit 'penmove'.
+    const isFirst = e.type === 'touchstart' && this._strokeTool === null;
+    if (isFirst) {
       this._strokeTool = this._classify(metric);
       this._sPos = null; this._velPos = null; this._sP = 0.5;
     }
     const tool = this._strokeTool || 'none';
 
-    const { x, y } = this._smoothXY(rawX, rawY);
-    const { pressure, velocity } = this._velPressure(rawX, rawY);
+    const { x: sx, y: sy } = this._smoothXY(x, y);
+    const { pressure, velocity } = this._velPressure(x, y);
 
-    this._emit(e.type === 'touchstart' ? 'pendown' : 'penmove', {
-      x, y, tool, pressure, velocity, metric,
+    this._emit(isFirst ? 'pendown' : 'penmove', {
+      x: sx, y: sy, tool, pressure, velocity, metric,
       pointCount: n,
       radiusX: rx, radiusY: ry,
       radiusMag: Math.sqrt(rx * rx + ry * ry),

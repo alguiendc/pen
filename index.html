@@ -111,7 +111,7 @@
     <span id="sm-p-val" style="color:#f8961e;min-width:28px">0.6</span>
   </label>
   <button class="plain" id="btn-cfg">⚙ Calibrar</button>
-  <span style="font-size:10px;color:#444">v1.2</span>
+  <span style="font-size:10px;color:#444">v1.3</span>
 </div>
 
 <div id="wrap">
@@ -251,8 +251,10 @@ function strokeLineWidth(pts) {
   if (!pts.length) return 2;
   const s = STYLE[strokeTool]; if (!s) return 2;
   if (mode === 'ir') {
-    const avgR = pts.reduce((a, p) => a + p.r, 0) / pts.length;
-    return Math.max(1, avgR * radMult);
+    // Use only the first few points so finger touches added later don't inflate the width
+    const sample = pts.slice(0, 8);
+    const avgR = sample.reduce((a, p) => a + p.r, 0) / sample.length;
+    return Math.max(1, avgR * radMult || 2);
   }
   const avgP = pts.reduce((a, p) => a + p.p, 0) / pts.length;
   return s.w * (0.6 + avgP * 0.8);
