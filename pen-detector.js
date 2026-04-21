@@ -4,7 +4,7 @@
  * evt = { x, y, tool, pressure, metric, pointCount }
  * tool = 'penThin' | 'penThick' | 'eraser' | 'none'
  */
-export const VERSION = '0.6';
+export const VERSION = '0.7';
 
 const DEFAULTS = {
   penThin:  { min: 0,    max: 1.2 },
@@ -79,8 +79,8 @@ export class PenDetector {
     const tool = this._strokeTool || 'none';
 
     this._emit(e.type === 'touchstart' ? 'pendown' : 'penmove', {
-      x: cx / n - rect.left,
-      y: cy / n - rect.top,
+      x: cx / n,
+      y: cy / n,
       tool,
       pressure:   this._pressure(metric, tool),
       metric,
@@ -89,10 +89,6 @@ export class PenDetector {
       radiusY:    ry,
       radiusMag:  Math.sqrt(rx * rx + ry * ry),
       bboxW, bboxH, bboxArea,
-    });
-      radiusX:    rx,
-      radiusY:    ry,
-      radiusMag:  Math.sqrt(rx * rx + ry * ry),
     });
   }
 
