@@ -1,63 +1,56 @@
 /**
- * pen-detector.js v1.0
+ * pen-detector.js v2.0 — IR touchscreen pen detection
  * Events: pendown(evt), penmove(evt), penup()
- * evt = { x, y, tool, pressure, velocity, metric, pointCount, radiusX, radiusY, radiusMag, bboxW, bboxH, bboxArea }
+ * evt = { x, y, tool, pressure, velocity, metric, pointCount,
+ *         radiusX, radiusY, radiusMag, bboxW, bboxH, bboxArea }
  * tool = 'penThin' | 'penThick' | 'eraser' | 'none'
  *
  * Options:
- *   element   — required DOM element
- *   mode      — 'ir' (Touch Events) | 'ink' (Pointer Events)
- *   thresholds — override default IR ranges
- *   smooth    — { xy: 0..1, pressure: 0..1 }  0=raw, 1=max smooth (default: xy=0.2, pressure=0.6)
+ *   element    — required DOM element
+ *   thresholds — { penThin, penThick, eraser } range overrides
+ *   smooth     — { xy: 0..1, pressure: 0..1 }  (default xy=0.2, pressure=0.6)
  */
-export const VERSION = '1.2';
+export const VERSION = '2.0';
 
 const DEFAULTS = {
   penThin:  { min: 0,   max: 1.2 },
   penThick: { min: 1.2, max: 2.5 },
   eraser:   { min: 10,  max: 30  },
-  // 2.5–10 = finger touch → 'none', not drawn
+  // 2.5–10 = finger → 'none'
 };
 
 export class PenDetector {
-  constructor({ element, mode = 'ir', thresholds, smooth = {} } = {}) {
+  constructor({ element, thresholds, smooth = {} } = {}) {
     if (!element) throw new Error('PenDetector: element required');
-    this._el   = element;
-    this._mode = mode;
-    this._thr  = Object.assign({}, DEFAULTS, thresholds);
-    this._ev   = {};
-    this._active     = new Set();
-    this._b          = {};
+    this._el  = element;
+    this._thr = Object.assign({}, DEFAULTS, thresholds);
+    this._ev  = {};
+    this._b   = {};
     this._strokeTool = null;
-    this._trackId    = null; // Touch.identifier of the tracked pen contact
+    this._trackId    = null;
 
-    // Smoothing coefficients  (weight of the OLD value, 0=raw, 1=frozen)
     this._smXY = Math.max(0, Math.min(0.95, smooth.xy       ?? 0.2));
     this._smP  = Math.max(0, Math.min(0.95, smooth.pressure ?? 0.6));
-
-    // EMA state (reset each stroke)
-    this._sPos  = null;   // { x, y }
-    this._velPos = null;  // { x, y, t }
-    this._sP    = 0.5;   // smoothed pressure
+    this._sPos   = null;
+    this._velPos = null;
+    this._sP     = 0.5;
 
     this._el.style.touchAction = 'none';
-    mode === 'ir' ? this._initIR() : this._initInk();
+    this._init();
   }
 
-  // ── tiny event emitter ───────────────────────────────────────────────────
+  // ── event emitter ────────────────────────────────────────────────────────
   on(e, fn)   { (this._ev[e] = this._ev[e] || []).push(fn); return this; }
   off(e, fn)  { if (this._ev[e]) this._ev[e] = this._ev[e].filter(h => h !== fn); return this; }
   _emit(e, d) { (this._ev[e] || []).slice().forEach(fn => fn(d)); }
 
-  // ── IR (Touch Events) ────────────────────────────────────────────────────
-  _initIR() {
+  // ── touch listeners ───────────────────────────────────────────────────────
+  _init() {
     const o = { passive: false };
-    this._b.ts = e => { e.preventDefault(); this._irHandle(e); };
-    this._b.tm = e => { e.preventDefault(); this._irHandle(e); };
+    this._b.ts = e => { e.preventDefault(); this._handle(e); };
+    this._b.tm = e => { e.preventDefault(); this._handle(e); };
     this._b.te = e => {
       e.preventDefault();
-      // End the stroke when the tracked pen contact lifts, even if other
-      // fingers are still on the screen.
       const trackedLifted = this._trackId !== null &&
         Array.from(e.changedTouches).some(t => t.identifier === this._trackId);
       if (!e.touches.length || trackedLifted) {
@@ -72,12 +65,12 @@ export class PenDetector {
     this._el.addEventListener('touchcancel', this._b.te, o);
   }
 
-  _irHandle(e) {
+  _handle(e) {
     const ts = e.touches;
     if (!ts.length) return;
     const rect = this._el.getBoundingClientRect();
 
-    // Compute full-contact stats (bbox, pointCount, avgRadius) for debug/calibration.
+    // Full-contact stats for debug / calibration
     let rSum = 0;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const t of ts) {
@@ -86,104 +79,52 @@ export class PenDetector {
       if (tx < minX) minX = tx; if (tx > maxX) maxX = tx;
       if (ty < minY) minY = ty; if (ty > maxY) maxY = ty;
     }
-    const n        = ts.length;
-    const bboxW    = maxX - minX, bboxH = maxY - minY, bboxArea = bboxW * bboxH;
-    const metric   = rSum / n; // avgRadius across all contacts
+    const n      = ts.length;
+    const bboxW  = maxX - minX, bboxH = maxY - minY;
+    const metric = rSum / n;
 
-    // First touch: classify tool and lock the touch ID we'll track.
+    // Classify and lock touch ID only on the very first contact
     const isFirst = e.type === 'touchstart' && this._strokeTool === null;
     if (isFirst) {
       this._strokeTool = this._classify(metric);
       this._trackId    = ts[0].identifier;
       this._sPos = null; this._velPos = null; this._sP = 0.5;
     }
-    const tool = this._strokeTool || 'none';
 
-    // Palm rejection: use ONLY the tracked touch for position.
-    // Any other contacts (fingers, palm) are completely ignored for drawing.
+    // Palm rejection: follow only the locked touch ID
     const tracked = Array.from(ts).find(t => t.identifier === this._trackId) || ts[0];
-    const rx = tracked.radiusX || 0, ry = tracked.radiusY || 0;
+    const rx   = tracked.radiusX || 0, ry = tracked.radiusY || 0;
     const rawX = tracked.clientX - rect.left, rawY = tracked.clientY - rect.top;
 
-    const { x, y } = this._smoothXY(rawX, rawY);
+    const { x, y }           = this._smoothXY(rawX, rawY);
     const { pressure, velocity } = this._velPressure(rawX, rawY);
 
     this._emit(isFirst ? 'pendown' : 'penmove', {
-      x, y, tool, pressure, velocity, metric,
+      x, y,
+      tool: this._strokeTool || 'none',
+      pressure, velocity, metric,
       pointCount: n,
       radiusX: rx, radiusY: ry,
       radiusMag: Math.sqrt(rx * rx + ry * ry),
-      bboxW, bboxH, bboxArea,
+      bboxW, bboxH, bboxArea: bboxW * bboxH,
     });
   }
 
-  // ── Ink (Pointer Events) ─────────────────────────────────────────────────
-  _initInk() {
-    this._b.pd = e => this._inkDown(e);
-    this._b.pm = e => this._inkMove(e);
-    this._b.pu = e => this._inkUp(e);
-    this._el.addEventListener('pointerdown',   this._b.pd);
-    this._el.addEventListener('pointermove',   this._b.pm);
-    this._el.addEventListener('pointerup',     this._b.pu);
-    this._el.addEventListener('pointercancel', this._b.pu);
-  }
-
-  _inkBuild(e) {
-    const rect = this._el.getBoundingClientRect();
-    const rawX = e.clientX - rect.left, rawY = e.clientY - rect.top;
-    const { x, y } = this._smoothXY(rawX, rawY);
-    const rawP = e.pressure || 0;
-    this._sP = this._smP * this._sP + (1 - this._smP) * rawP;
-    return { x, y, tool: this._strokeTool, pressure: this._sP, velocity: 0, metric: rawP, pointCount: 1 };
-  }
-
-  _inkDown(e) {
-    if (e.pointerType !== 'pen') return;
-    e.preventDefault();
-    this._el.setPointerCapture(e.pointerId);
-    this._active.add(e.pointerId);
-    this._sPos = null; this._sP = e.pressure || 0;
-    const isErase = (e.buttons & 32) !== 0;
-    const p = e.pressure || 0;
-    this._strokeTool = isErase ? 'eraser' : p > 0.45 ? 'penThick' : 'penThin';
-    this._emit('pendown', this._inkBuild(e));
-  }
-
-  _inkMove(e) {
-    if (e.pointerType !== 'pen' || !this._active.has(e.pointerId)) return;
-    e.preventDefault();
-    this._emit('penmove', this._inkBuild(e));
-  }
-
-  _inkUp(e) {
-    if (e.pointerType !== 'pen') return;
-    this._active.delete(e.pointerId);
-    if (!this._active.size) {
-      this._strokeTool = null;
-      this._sPos = null; this._sP = 0.5;
-      this._emit('penup', {});
-    }
-  }
-
-  // ── smoothing helpers ────────────────────────────────────────────────────
+  // ── smoothing ─────────────────────────────────────────────────────────────
   _smoothXY(x, y) {
-    if (this._smXY === 0 || !this._sPos) {
-      this._sPos = { x, y };
-      return { x, y };
-    }
+    if (!this._smXY || !this._sPos) { this._sPos = { x, y }; return { x, y }; }
     this._sPos.x = this._smXY * this._sPos.x + (1 - this._smXY) * x;
     this._sPos.y = this._smXY * this._sPos.y + (1 - this._smXY) * y;
     return { x: this._sPos.x, y: this._sPos.y };
   }
 
-  // Velocity-based pressure: slow stroke = high pressure. Returns smoothed value.
   _velPressure(x, y) {
     const now = Date.now();
     let velocity = 0;
     if (this._velPos) {
       const dx = x - this._velPos.x, dy = y - this._velPos.y;
       const dt = Math.max(1, now - this._velPos.t);
-      velocity = Math.sqrt(dx * dx + dy * dy) / dt; // px/ms
+      velocity = Math.sqrt(dx * dx + dy * dy) / dt;
       const raw = 1 - Math.min(1, velocity / 3);
       this._sP = this._smP * this._sP + (1 - this._smP) * raw;
     }
@@ -191,7 +132,7 @@ export class PenDetector {
     return { pressure: this._sP, velocity };
   }
 
-  // ── classification ───────────────────────────────────────────────────────
+  // ── classification ────────────────────────────────────────────────────────
   _classify(m) {
     const t = this._thr;
     if (m >= t.penThin.min  && m <= t.penThin.max)  return 'penThin';
@@ -200,13 +141,11 @@ export class PenDetector {
     return 'none';
   }
 
-  // ── public API ───────────────────────────────────────────────────────────
+  // ── public API ────────────────────────────────────────────────────────────
   get thresholds() { return this._thr; }
-  get mode()       { return this._mode; }
 
   setThresholds(thr) { Object.assign(this._thr, thr); return this; }
 
-  /** Change smoothing at runtime. xy/pressure each 0 (raw) – 1 (max smooth). */
   setSmooth({ xy, pressure } = {}) {
     if (xy       !== undefined) this._smXY = Math.max(0, Math.min(0.95, xy));
     if (pressure !== undefined) this._smP  = Math.max(0, Math.min(0.95, pressure));
@@ -214,17 +153,9 @@ export class PenDetector {
   }
 
   destroy() {
-    const el = this._el;
-    if (this._mode === 'ir') {
-      el.removeEventListener('touchstart',  this._b.ts);
-      el.removeEventListener('touchmove',   this._b.tm);
-      el.removeEventListener('touchend',    this._b.te);
-      el.removeEventListener('touchcancel', this._b.te);
-    } else {
-      el.removeEventListener('pointerdown',   this._b.pd);
-      el.removeEventListener('pointermove',   this._b.pm);
-      el.removeEventListener('pointerup',     this._b.pu);
-      el.removeEventListener('pointercancel', this._b.pu);
-    }
+    this._el.removeEventListener('touchstart',  this._b.ts);
+    this._el.removeEventListener('touchmove',   this._b.tm);
+    this._el.removeEventListener('touchend',    this._b.te);
+    this._el.removeEventListener('touchcancel', this._b.te);
   }
 }

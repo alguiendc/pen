@@ -10,26 +10,16 @@
 
     #bar {
       background:#1a1a2e; padding:8px 12px;
-      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
       border-bottom:2px solid #0f3460; min-height:48px; user-select:none;
     }
 
-    #mode-sel { display:flex; border:1px solid #333; border-radius:6px; overflow:hidden; }
-    #mode-sel button {
-      padding:4px 12px; background:#1a1a2e; color:#666;
-      border:none; cursor:pointer; font-family:monospace; font-size:12px; font-weight:bold;
-    }
-    #mode-sel button.on { background:#4cc9f0; color:#000; }
-
-    #tool {
-      padding:3px 12px; border-radius:20px; font-size:13px; font-weight:bold;
-      background:#222; color:#555;
-    }
+    #tool { padding:3px 12px; border-radius:20px; font-size:13px; font-weight:bold; background:#222; color:#555; }
     .t-penThin  { background:#0077b6 !important; color:#fff !important; }
     .t-penThick { background:#f8961e !important; color:#000 !important; }
     .t-eraser   { background:#f72585 !important; color:#fff !important; }
 
-    #dbg { font-size:11px; color:#666; }
+    #dbg { font-size:10px; color:#666; line-height:1.6; }
 
     button.plain {
       padding:4px 10px; background:#222; color:#aaa;
@@ -61,18 +51,11 @@
     .inputs label { flex:1; min-width:0; display:flex; flex-direction:column; font-size:9px; color:#666; }
     .inputs input { width:100%; min-width:0; background:#0a1525; border:1px solid #1a3a5a; color:#eee; font-family:monospace; font-size:12px; padding:3px 4px; border-radius:4px; }
     .cal-btns { display:flex; gap:5px; }
-    .btn-read {
-      flex:1; padding:4px 6px; border:none; border-radius:5px;
-      background:#1a3a5a; color:#eee; cursor:pointer; font-family:monospace; font-size:11px;
-    }
+    .btn-read { flex:1; padding:4px 6px; border:none; border-radius:5px; background:#1a3a5a; color:#eee; cursor:pointer; font-family:monospace; font-size:11px; }
     .btn-read.rec  { background:#f72585; color:#fff; }
     .btn-read.save { background:#2d6a4f; color:#fff; }
     .btn-read:disabled { opacity:.3; cursor:default; }
-    .btn-cancel {
-      padding:4px 8px; border:none; border-radius:5px;
-      background:#3a1020; color:#f72585; cursor:pointer; font-family:monospace; font-size:11px;
-    }
-    .btn-cancel:hover { background:#4a1a30; }
+    .btn-cancel { padding:4px 8px; border:none; border-radius:5px; background:#3a1020; color:#f72585; cursor:pointer; font-family:monospace; font-size:11px; }
     .live { font-size:10px; color:#4cc9f0; white-space:pre-line; min-height:28px; }
     #btn-reset { margin-top:auto; padding:5px; background:#2a1010; color:#f72585; border:1px solid #f7258533; border-radius:5px; cursor:pointer; font-size:11px; font-family:monospace; }
   </style>
@@ -80,38 +63,32 @@
 <body>
 
 <div id="bar">
-  <div id="mode-sel">
-    <button id="btn-ir" class="on">IR</button>
-    <button id="btn-ink">Ink</button>
-  </div>
   <div id="tool">Ninguno</div>
-  <div id="dbg" style="font-size:10px;line-height:1.6">
+  <div id="dbg">
     <span id="d1">pts:—</span> &nbsp;
     <span id="d2">metric:—</span> &nbsp;
     <span id="d3">rX:—</span> &nbsp;
     <span id="d4">rY:—</span> &nbsp;
     <span id="d5">√(rX²+rY²):—</span><br>
-    <span id="d6">bbox W×H:—</span> &nbsp;
+    <span id="d6">bbox:—</span> &nbsp;
     <span id="d7">bboxArea:—</span> &nbsp;
     <span id="d8" style="color:#4cc9f0">grosor:—</span>
   </div>
   <button class="plain" id="btn-clr">Limpiar</button>
-  <label id="mult-wrap" style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;white-space:nowrap">
+  <label style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;white-space:nowrap">
     ×rad <input type="number" id="rad-mult" value="8" min="1" max="200" step="1"
       style="width:50px;background:#0a1525;border:1px solid #1a3a5a;color:#4cc9f0;font-family:monospace;font-size:13px;padding:2px 5px;border-radius:4px">
   </label>
-  <label id="mult-wrap" style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;white-space:nowrap">
-    sm-xy <input type="range" id="sm-xy" min="0" max="0.95" step="0.05" value="0.2"
-      style="width:60px;accent-color:#4cc9f0">
-    <span id="sm-xy-val" style="color:#4cc9f0;min-width:28px">0.2</span>
+  <label style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;white-space:nowrap">
+    sm-xy <input type="range" id="sm-xy" min="0" max="0.95" step="0.05" value="0.2" style="width:60px;accent-color:#4cc9f0">
+    <span id="sm-xy-val" style="color:#4cc9f0;min-width:28px">0.20</span>
   </label>
-  <label id="mult-wrap" style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;white-space:nowrap">
-    sm-P <input type="range" id="sm-p" min="0" max="0.95" step="0.05" value="0.6"
-      style="width:60px;accent-color:#f8961e">
-    <span id="sm-p-val" style="color:#f8961e;min-width:28px">0.6</span>
+  <label style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;white-space:nowrap">
+    sm-P <input type="range" id="sm-p" min="0" max="0.95" step="0.05" value="0.6" style="width:60px;accent-color:#f8961e">
+    <span id="sm-p-val" style="color:#f8961e;min-width:28px">0.60</span>
   </label>
   <button class="plain" id="btn-cfg">⚙ Calibrar</button>
-  <span style="font-size:10px;color:#444">v1.4</span>
+  <span style="font-size:10px;color:#444">v2.0</span>
 </div>
 
 <div id="wrap">
@@ -160,10 +137,7 @@
       <div class="live" id="live-eraser"></div>
     </div>
 
-    <div style="font-size:9px;color:#444;line-height:1.5">
-      dedo ~2.5–10 = ninguno (no dibuja)
-    </div>
-
+    <div style="font-size:9px;color:#444;line-height:1.5">dedo ~2.5–10 = ninguno</div>
     <button id="btn-reset">↺ Defaults</button>
   </div>
 </div>
@@ -173,13 +147,12 @@ import { PenDetector } from './pen-detector.js';
 
 // ── canvas ────────────────────────────────────────────────────────────────
 const wrap = document.getElementById('wrap');
-const dc = document.getElementById('dc'), dctx = dc.getContext('2d');
 const cc = document.getElementById('cc'), cctx = cc.getContext('2d');
+const dc = document.getElementById('dc'), dctx = dc.getContext('2d');
 
 function resize() {
-  const dpr = devicePixelRatio || 1;
-  const w = wrap.clientWidth, h = wrap.clientHeight;
-  [dc, cc].forEach(c => {
+  const dpr = devicePixelRatio || 1, w = wrap.clientWidth, h = wrap.clientHeight;
+  [cc, dc].forEach(c => {
     c.width = w * dpr; c.height = h * dpr;
     c.style.width = w + 'px'; c.style.height = h + 'px';
     c.getContext('2d').scale(dpr, dpr);
@@ -189,143 +162,112 @@ resize();
 window.addEventListener('resize', resize);
 
 // ── detector ──────────────────────────────────────────────────────────────
-let det = null, mode = 'ir', radMult = 8;
-let strokePts = [], strokeTool = null, erasePrev = null;
-
+let radMult = 8;
 document.getElementById('rad-mult').addEventListener('input', e => { radMult = Math.max(1, +e.target.value || 1); });
 document.getElementById('sm-xy').addEventListener('input', e => {
-  const v = +e.target.value;
-  document.getElementById('sm-xy-val').textContent = v.toFixed(2);
-  if (det) det.setSmooth({ xy: v });
+  document.getElementById('sm-xy-val').textContent = (+e.target.value).toFixed(2);
+  det.setSmooth({ xy: +e.target.value });
 });
 document.getElementById('sm-p').addEventListener('input', e => {
-  const v = +e.target.value;
-  document.getElementById('sm-p-val').textContent = v.toFixed(2);
-  if (det) det.setSmooth({ pressure: v });
+  document.getElementById('sm-p-val').textContent = (+e.target.value).toFixed(2);
+  det.setSmooth({ pressure: +e.target.value });
 });
 
-const STYLE = {
-  penThin:  { w: 2,  color: '#4cc9f0' },
-  penThick: { w: 14, color: '#f8961e' },
-  eraser:   { w: 50, color: null      },
-};
+const saved = loadThresholds();
+const det = new PenDetector({
+  element: dc,
+  thresholds: saved || undefined,
+  smooth: { xy: 0.2, pressure: 0.6 },
+});
+if (saved) syncInputs();
 
-function start(m) {
-  if (det) det.destroy();
-  mode = m; strokePts = []; strokeTool = null; erasePrev = null;
-  const smXY = +document.getElementById('sm-xy').value;
-  const smP  = +document.getElementById('sm-p').value;
-  det = new PenDetector({ element: dc, mode: m, smooth: { xy: smXY, pressure: smP } });
+// ── stroke rendering (Catmull-Rom, double buffer) ─────────────────────────
+let strokePts = [], strokeTool = null, erasePrev = null;
 
-  det.on('pendown', e => {
-    setDebug(e);
-    if (e.tool === 'eraser') {
-      erasePrev = { x: e.x, y: e.y };
-    } else if (e.tool !== 'none') {
-      strokePts = [{ x: e.x, y: e.y, p: e.pressure, r: e.radiusMag || 0 }];
-      strokeTool = e.tool;
-    }
-  });
+det.on('pendown', e => {
+  setDebug(e);
+  if (e.tool === 'eraser') { erasePrev = { x: e.x, y: e.y }; return; }
+  if (e.tool === 'none')   return;
+  strokePts = [{ x: e.x, y: e.y, r: e.radiusMag || 0 }];
+  strokeTool = e.tool;
+});
 
-  det.on('penmove', e => {
-    setDebug(e);
-    if (e.tool === 'eraser') {
-      if (erasePrev) eraseSegment(erasePrev, e);
-      erasePrev = { x: e.x, y: e.y };
-    } else if (strokeTool) {
-      strokePts.push({ x: e.x, y: e.y, p: e.pressure, r: e.radiusMag || 0 });
-      redrawActive();
-    }
-  });
-
-  det.on('penup', () => {
-    if (strokePts.length > 1 && strokeTool) commitStroke();
-    strokePts = []; strokeTool = null; erasePrev = null;
-    clearDebug();
-  });
-}
-
-// ── Catmull-Rom rendering ─────────────────────────────────────────────────
-
-function strokeLineWidth(pts) {
-  if (!pts.length) return 2;
-  const s = STYLE[strokeTool]; if (!s) return 2;
-  if (mode === 'ir') {
-    // Use only the first few points so finger touches added later don't inflate the width
-    const sample = pts.slice(0, 8);
-    const avgR = sample.reduce((a, p) => a + p.r, 0) / sample.length;
-    return Math.max(1, avgR * radMult || 2);
+det.on('penmove', e => {
+  setDebug(e);
+  if (e.tool === 'eraser') {
+    if (erasePrev) eraseSegment(erasePrev, e);
+    erasePrev = { x: e.x, y: e.y }; return;
   }
-  const avgP = pts.reduce((a, p) => a + p.p, 0) / pts.length;
-  return s.w * (0.6 + avgP * 0.8);
+  if (!strokeTool) return;
+  strokePts.push({ x: e.x, y: e.y, r: e.radiusMag || 0 });
+  redrawActive();
+});
+
+det.on('penup', () => {
+  if (strokePts.length > 1 && strokeTool) commitStroke();
+  strokePts = []; strokeTool = null; erasePrev = null;
+  clearDebug();
+});
+
+const COLORS = { penThin: '#4cc9f0', penThick: '#f8961e' };
+
+function lineWidth(pts) {
+  const s = pts.slice(0, 8);
+  return Math.max(1, (s.reduce((a,p) => a + p.r, 0) / s.length) * radMult || 2);
 }
 
 function catmullRom(ctx, pts, color, lw) {
   if (pts.length < 2) return;
   ctx.save();
-  ctx.beginPath();
-  ctx.lineWidth = lw;
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.strokeStyle = color;
-  ctx.globalCompositeOperation = 'source-over';
   ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[Math.max(0, i - 1)];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const p0 = pts[Math.max(0,i-1)], p1 = pts[i];
+    const p2 = pts[i+1],            p3 = pts[Math.min(pts.length-1,i+2)];
     ctx.bezierCurveTo(
-      p1.x + (p2.x - p0.x) / 6, p1.y + (p2.y - p0.y) / 6,
-      p2.x - (p3.x - p1.x) / 6, p2.y - (p3.y - p1.y) / 6,
+      p1.x+(p2.x-p0.x)/6, p1.y+(p2.y-p0.y)/6,
+      p2.x-(p3.x-p1.x)/6, p2.y-(p3.y-p1.y)/6,
       p2.x, p2.y
     );
   }
-  ctx.stroke();
-  ctx.restore();
+  ctx.stroke(); ctx.restore();
 }
 
 function redrawActive() {
-  const s = STYLE[strokeTool]; if (!s || strokePts.length < 2) return;
-  const dpr = devicePixelRatio || 1;
-  dctx.clearRect(0, 0, dc.width / dpr, dc.height / dpr);
-  catmullRom(dctx, strokePts, s.color, strokeLineWidth(strokePts));
+  const dpr = devicePixelRatio||1, color = COLORS[strokeTool]; if (!color) return;
+  dctx.clearRect(0, 0, dc.width/dpr, dc.height/dpr);
+  catmullRom(dctx, strokePts, color, lineWidth(strokePts));
 }
 
 function commitStroke() {
-  const s = STYLE[strokeTool]; if (!s) return;
-  catmullRom(cctx, strokePts, s.color, strokeLineWidth(strokePts));
-  const dpr = devicePixelRatio || 1;
-  dctx.clearRect(0, 0, dc.width / dpr, dc.height / dpr);
+  const color = COLORS[strokeTool]; if (!color) return;
+  catmullRom(cctx, strokePts, color, lineWidth(strokePts));
+  const dpr = devicePixelRatio||1;
+  dctx.clearRect(0, 0, dc.width/dpr, dc.height/dpr);
 }
 
-function eraseSegment(from, evt) {
+function eraseSegment(from, to) {
   [cctx, dctx].forEach(ctx => {
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(evt.x, evt.y);
-    ctx.lineWidth = 50; ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(0,0,0,1)';
-    ctx.stroke();
-    ctx.restore();
+    ctx.save(); ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y);
+    ctx.lineWidth = 50; ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(0,0,0,1)';
+    ctx.stroke(); ctx.restore();
   });
 }
 
-// ── debug bar ─────────────────────────────────────────────────────────────
+// ── debug ─────────────────────────────────────────────────────────────────
 function setDebug(e) {
   const tb = document.getElementById('tool');
   tb.textContent = e.tool; tb.className = 't-' + e.tool;
   document.getElementById('d1').textContent = `pts:${e.pointCount}`;
-  document.getElementById('d2').textContent = `metric:${(e.metric ?? 0).toFixed(2)}`;
-  document.getElementById('d3').textContent = `rX:${(e.radiusX ?? 0).toFixed(2)}`;
-  document.getElementById('d4').textContent = `rY:${(e.radiusY ?? 0).toFixed(2)}`;
-  document.getElementById('d5').textContent = `√(rX²+rY²):${(e.radiusMag ?? 0).toFixed(2)}`;
+  document.getElementById('d2').textContent = `metric:${(e.metric??0).toFixed(2)}`;
+  document.getElementById('d3').textContent = `rX:${(e.radiusX??0).toFixed(2)}`;
+  document.getElementById('d4').textContent = `rY:${(e.radiusY??0).toFixed(2)}`;
+  document.getElementById('d5').textContent = `√(rX²+rY²):${(e.radiusMag??0).toFixed(2)}`;
   document.getElementById('d6').textContent = `bbox:${Math.round(e.bboxW??0)}×${Math.round(e.bboxH??0)}`;
   document.getElementById('d7').textContent = `bboxArea:${Math.round(e.bboxArea??0)}px²`;
-  if (mode === 'ir') {
-    document.getElementById('d8').textContent = `grosor:${((e.radiusMag||0)*radMult).toFixed(1)}px`;
-  }
+  document.getElementById('d8').textContent = `grosor:${((e.radiusMag||0)*radMult).toFixed(1)}px`;
 }
 function clearDebug() {
   document.getElementById('tool').textContent = 'Ninguno';
@@ -336,74 +278,45 @@ function clearDebug() {
   });
 }
 
-// ── mode buttons ──────────────────────────────────────────────────────────
-document.getElementById('btn-ir').addEventListener('click', () => {
-  document.getElementById('btn-ir').classList.add('on');
-  document.getElementById('btn-ink').classList.remove('on');
-  document.getElementById('btn-cfg').style.display = '';
-  document.getElementById('mult-wrap').style.display = '';
-  document.getElementById('d8').style.display = '';
-  start('ir'); syncInputs();
-});
-document.getElementById('btn-ink').addEventListener('click', () => {
-  document.getElementById('btn-ink').classList.add('on');
-  document.getElementById('btn-ir').classList.remove('on');
-  document.getElementById('btn-cfg').style.display = 'none';
-  document.getElementById('mult-wrap').style.display = 'none';
-  document.getElementById('d8').style.display = 'none';
-  document.getElementById('cal').classList.remove('open');
-  document.getElementById('btn-cfg').classList.remove('on');
-  start('ink');
+// ── clear button ──────────────────────────────────────────────────────────
+document.getElementById('btn-clr').addEventListener('click', () => {
+  const dpr = devicePixelRatio||1, w = dc.width/dpr, h = dc.height/dpr;
+  dctx.clearRect(0,0,w,h); cctx.clearRect(0,0,w,h);
 });
 
 // ── calibration panel ─────────────────────────────────────────────────────
-// Phases: idle → reading (▶Leer pressed) → stopped (■Parar pressed) → idle (✓Guardar or ✕)
-let calTool = null, calMin = Infinity, calMax = -Infinity, calCount = 0;
-let calPhase = 'idle';  // 'idle' | 'reading' | 'stopped'
-let calOldThr = null;   // snapshot for cancel
-const TOL = 0.15;
-
 document.getElementById('btn-cfg').addEventListener('click', () => {
   document.getElementById('cal').classList.toggle('open');
   document.getElementById('btn-cfg').classList.toggle('on');
 });
 
+let calTool = null, calMin = Infinity, calMax = -Infinity, calCount = 0;
+let calPhase = 'idle', calOldThr = null;
+const TOL = 0.15;
+
 function setPhase(tool, phase) {
-  calPhase = phase;
-  calTool  = phase === 'idle' ? null : tool;
+  calPhase = phase; calTool = phase === 'idle' ? null : tool;
   const btn    = document.querySelector(`.btn-read[data-tool="${tool}"]`);
   const canBtn = document.querySelector(`.btn-cancel[data-tool="${tool}"]`);
   const row    = document.getElementById('row-' + tool);
-  const allRead = document.querySelectorAll('.btn-read');
-
   btn.classList.remove('rec', 'save');
   if (phase === 'idle') {
-    btn.textContent = '▶ Leer';
-    canBtn.style.display = 'none';
+    btn.textContent = '▶ Leer'; canBtn.style.display = 'none';
     row.classList.remove('active');
-    allRead.forEach(b => b.disabled = false);
+    document.querySelectorAll('.btn-read').forEach(b => b.disabled = false);
   } else if (phase === 'reading') {
-    btn.textContent = '■ Parar'; btn.classList.add('rec');
-    canBtn.style.display = '';
+    btn.textContent = '■ Parar'; btn.classList.add('rec'); canBtn.style.display = '';
     row.classList.add('active');
-    allRead.forEach(b => { if (b !== btn) b.disabled = true; });
+    document.querySelectorAll('.btn-read').forEach(b => { if (b !== btn) b.disabled = true; });
   } else if (phase === 'stopped') {
-    btn.textContent = '✓ Guardar'; btn.classList.add('save');
-    canBtn.style.display = '';
-    row.classList.add('active');
+    btn.textContent = '✓ Guardar'; btn.classList.add('save'); canBtn.style.display = '';
   }
-}
-
-function stopRecording() {
-  det.off('penmove', recordCal);
-  det.off('pendown', recordCal);
 }
 
 document.querySelectorAll('.btn-read').forEach(btn => {
   btn.addEventListener('click', () => {
     const tool = btn.dataset.tool;
     if (calPhase === 'idle') {
-      // ▶ Leer — start recording
       calOldThr = JSON.parse(JSON.stringify(det.thresholds));
       calMin = Infinity; calMax = -Infinity; calCount = 0;
       document.getElementById('live-' + tool).textContent = 'Toca con el instrumento…';
@@ -411,27 +324,18 @@ document.querySelectorAll('.btn-read').forEach(btn => {
       det.off('pendown', recordCal); det.on('pendown', recordCal);
       setPhase(tool, 'reading');
     } else if (calPhase === 'reading' && calTool === tool) {
-      // ■ Parar — stop capturing, let user edit manually
-      stopRecording();
-      if (calCount === 0) {
-        document.getElementById('live-' + tool).textContent = 'Sin lecturas — edita manualmente';
-      } else {
-        document.getElementById('live-' + tool).textContent =
-          `Capturado: ${calMin.toFixed(2)} – ${calMax.toFixed(2)}\nEdita si necesitas y guarda.`;
-      }
+      det.off('penmove', recordCal); det.off('pendown', recordCal);
+      document.getElementById('live-' + tool).textContent =
+        calCount > 0 ? `Capturado: ${calMin.toFixed(2)} – ${calMax.toFixed(2)}\nEdita si necesitas.`
+                     : 'Sin lecturas — edita manualmente';
       setPhase(tool, 'stopped');
     } else if (calPhase === 'stopped' && calTool === tool) {
-      // ✓ Guardar — save whatever is in the inputs
-      const minVal = parseFloat(document.getElementById('min-' + tool).value);
-      const maxVal = parseFloat(document.getElementById('max-' + tool).value);
-      if (!isNaN(minVal) && !isNaN(maxVal) && maxVal > minVal) {
-        const newThr = {}; newThr[tool] = { min: minVal, max: maxVal };
-        det.setThresholds(newThr);
-        saveThresholds();
-        document.getElementById('live-' + tool).textContent = `✓ guardado: ${minVal} – ${maxVal}`;
-      } else {
-        document.getElementById('live-' + tool).textContent = 'Error: max debe ser > min';
-        return;
+      const minV = parseFloat(document.getElementById('min-'+tool).value);
+      const maxV = parseFloat(document.getElementById('max-'+tool).value);
+      if (!isNaN(minV) && !isNaN(maxV) && maxV > minV) {
+        const t = {}; t[tool] = { min: minV, max: maxV };
+        det.setThresholds(t); saveThresholds();
+        document.getElementById('live-'+tool).textContent = `✓ ${minV} – ${maxV}`;
       }
       setPhase(tool, 'idle');
     }
@@ -441,9 +345,9 @@ document.querySelectorAll('.btn-read').forEach(btn => {
 document.querySelectorAll('.btn-cancel').forEach(btn => {
   btn.addEventListener('click', () => {
     const tool = btn.dataset.tool;
-    stopRecording();
+    det.off('penmove', recordCal); det.off('pendown', recordCal);
     if (calOldThr) { det.setThresholds(calOldThr); syncInputs(); }
-    document.getElementById('live-' + tool).textContent = 'Cancelado';
+    document.getElementById('live-'+tool).textContent = 'Cancelado';
     setPhase(tool, 'idle');
   });
 });
@@ -455,45 +359,19 @@ function recordCal(e) {
   calCount++;
   const minV = Math.max(0, calMin - TOL).toFixed(2);
   const maxV = (calMax + TOL).toFixed(2);
-  document.getElementById('live-' + calTool).textContent =
+  document.getElementById('live-'+calTool).textContent =
     `actual: ${e.metric.toFixed(3)}\nrango:  ${minV} – ${maxV}\n(${calCount} lecturas)`;
-  // update inputs live — user can still edit after Parar
-  document.getElementById('min-' + calTool).value = minV;
-  document.getElementById('max-' + calTool).value = maxV;
+  document.getElementById('min-'+calTool).value = minV;
+  document.getElementById('max-'+calTool).value = maxV;
 }
 
-// manual input edits apply immediately
-for (const tool of ['penThin', 'penThick', 'eraser']) {
-  for (const b of ['min', 'max']) {
-    document.getElementById(b + '-' + tool).addEventListener('input', () => {
-      if (calPhase === 'reading') return; // don't save mid-capture
-      const v = parseFloat(document.getElementById(b + '-' + tool).value);
-      if (!isNaN(v) && det) {
-        const upd = {}; upd[tool] = { ...det.thresholds[tool], [b]: v };
-        det.setThresholds(upd);
-        saveThresholds();
-      }
+for (const tool of ['penThin','penThick','eraser']) {
+  for (const b of ['min','max']) {
+    document.getElementById(b+'-'+tool).addEventListener('input', () => {
+      if (calPhase === 'reading') return;
+      const v = parseFloat(document.getElementById(b+'-'+tool).value);
+      if (!isNaN(v)) { const u={}; u[tool]={...det.thresholds[tool],[b]:v}; det.setThresholds(u); saveThresholds(); }
     });
-  }
-}
-
-// ── persistence ───────────────────────────────────────────────────────────
-function saveThresholds() {
-  try { localStorage.setItem('pd-thr', JSON.stringify(det.thresholds)); } catch {}
-}
-function loadThresholds() {
-  try {
-    const d = JSON.parse(localStorage.getItem('pd-thr'));
-    if (d?.penThin && d?.penThick && d?.eraser) return d;
-  } catch {}
-  return null;
-}
-function syncInputs() {
-  if (!det || mode !== 'ir') return;
-  const t = det.thresholds;
-  for (const tool of ['penThin', 'penThick', 'eraser']) {
-    document.getElementById('min-' + tool).value = t[tool].min;
-    document.getElementById('max-' + tool).value = t[tool].max;
   }
 }
 
@@ -502,17 +380,21 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   saveThresholds(); syncInputs();
 });
 
-document.getElementById('btn-clr').addEventListener('click', () => {
-  const dpr = devicePixelRatio || 1;
-  const w = dc.width / dpr, h = dc.height / dpr;
-  dctx.clearRect(0, 0, w, h);
-  cctx.clearRect(0, 0, w, h);
-});
-
-// ── init ──────────────────────────────────────────────────────────────────
-const saved = loadThresholds();
-start('ir');
-if (saved) { det.setThresholds(saved); syncInputs(); }
+// ── persistence ───────────────────────────────────────────────────────────
+function saveThresholds() {
+  try { localStorage.setItem('pd-thr', JSON.stringify(det.thresholds)); } catch {}
+}
+function loadThresholds() {
+  try { const d = JSON.parse(localStorage.getItem('pd-thr')); if (d?.penThin) return d; } catch {}
+  return null;
+}
+function syncInputs() {
+  const t = det.thresholds;
+  for (const tool of ['penThin','penThick','eraser']) {
+    document.getElementById('min-'+tool).value = t[tool].min;
+    document.getElementById('max-'+tool).value = t[tool].max;
+  }
+}
 </script>
 </body>
 </html>
