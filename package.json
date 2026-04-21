@@ -1,0 +1,16 @@
+{
+  "name": "pen-detector",
+  "version": "0.1.0",
+  "description": "IR touch and Windows Ink pen detection library. Normalizes hardware input into tool type, pressure, tilt, velocity and more.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "src/",
+    "index.js"
+  ],
+  "keywords": ["pen", "touch", "ir", "windows-ink", "stylus", "pressure", "tilt", "canvas"],
+  "license": "MIT"
+}

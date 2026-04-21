@@ -3,650 +3,347 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Pen Touch Detection</title>
+  <title>pen-detector demo</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background:#1a1a2e; color:#eee; font-family:monospace; overflow:hidden; height:100vh; display:flex; flex-direction:column; }
 
-    body {
-      background: #1a1a2e;
-      color: #eee;
-      font-family: monospace;
-      overflow: hidden;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
+    /* ── debug bar ── */
+    #bar {
+      background:#16213e; padding:6px 12px; display:flex; gap:14px; align-items:center;
+      flex-wrap:wrap; border-bottom:2px solid #0f3460; user-select:none; min-height:50px;
     }
+    .b { display:flex; flex-direction:column; }
+    .bl { font-size:9px; color:#555; text-transform:uppercase; letter-spacing:.3px; }
+    .bv { font-size:17px; font-weight:bold; line-height:1.2; }
+    #mode-badge {
+      padding:3px 10px; border-radius:20px; font-size:12px; font-weight:bold;
+      transition:background .1s,color .1s;
+    }
+    .m-none     { background:#2a2a2a; color:#666; }
+    .m-penThin  { background:#0077b6; color:#fff; }
+    .m-penThick { background:#f8961e; color:#000; }
+    .m-eraser   { background:#f72585; color:#fff; }
+    #btn-cfg { margin-left:auto; padding:4px 9px; background:#0f3460; color:#eee; border:1px solid #1a5276; border-radius:7px; cursor:pointer; font-size:15px; }
+    #btn-cfg.on { background:#4cc9f0; color:#000; }
+    #btn-clr { padding:4px 10px; background:#e63946; color:#fff; border:none; border-radius:7px; cursor:pointer; font-family:monospace; }
 
-    /* ── Debug bar ─────────────────────────────────────────── */
-    #debug {
-      background: #16213e;
-      padding: 8px 14px;
-      display: flex;
-      gap: 18px;
-      align-items: center;
-      flex-wrap: wrap;
-      border-bottom: 2px solid #0f3460;
-      user-select: none;
-      min-height: 52px;
-    }
-    .dbg-block { display: flex; flex-direction: column; }
-    .dbg-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: .4px; }
-    .dbg-value { font-size: 19px; font-weight: bold; line-height: 1.2; }
+    /* ── main ── */
+    #main { flex:1; display:flex; overflow:hidden; }
+    #wrap { flex:1; position:relative; }
+    canvas { position:absolute; top:0; left:0; width:100%; height:100%; touch-action:none; }
+    #dc { z-index:2; }
+    #oc { z-index:1; background:#111; }
 
-    #mode-indicator {
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: bold;
-      transition: background .1s, color .1s;
+    /* ── sidebar ── */
+    #sb {
+      width:230px; background:#16213e; border-left:2px solid #0f3460;
+      padding:12px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;
+      transition:width .2s, padding .2s;
     }
-    .mode-none     { background:#2a2a2a; color:#666; }
-    .mode-penThin  { background:#0077b6; color:#fff; }
-    .mode-penThick { background:#f8961e; color:#000; }
-    .mode-eraser   { background:#f72585; color:#fff; }
-
-    #btn-settings {
-      margin-left: auto;
-      padding: 5px 10px;
-      background: #0f3460;
-      color: #eee;
-      border: 1px solid #1a5276;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 16px;
-    }
-    #btn-settings.active { background: #4cc9f0; color: #000; }
-
-    #btn-clear {
-      padding: 5px 12px;
-      background: #e63946;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-family: monospace;
-    }
-
-    /* ── Main area ─────────────────────────────────────────── */
-    #main {
-      flex: 1;
-      display: flex;
-      overflow: hidden;
-    }
-
-    #canvas-wrap {
-      flex: 1;
-      position: relative;
-    }
-
-    canvas {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      touch-action: none;
-    }
-    #draw-canvas  { z-index: 2; }
-    #debug-canvas { z-index: 1; background: #111; }
-
-    /* ── Sidebar ───────────────────────────────────────────── */
-    #sidebar {
-      width: 230px;
-      background: #16213e;
-      border-left: 2px solid #0f3460;
-      padding: 14px 12px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      transition: width .2s, padding .2s;
-    }
-    #sidebar.hidden {
-      width: 0;
-      padding: 0;
-      overflow: hidden;
-      border: none;
-    }
-
-    .sb-title {
-      font-size: 13px;
-      font-weight: bold;
-      color: #aaa;
-      border-bottom: 1px solid #0f3460;
-      padding-bottom: 6px;
-    }
-
-    /* banner que aparece cuando se está calibrando */
-    #cal-banner {
-      display: none;
-      background: #f72585;
-      color: #fff;
-      border-radius: 6px;
-      padding: 6px 8px;
-      font-size: 11px;
-      text-align: center;
-      animation: pulse 1s infinite;
-    }
-    #cal-banner.visible { display: block; }
+    #sb.hidden { width:0; padding:0; overflow:hidden; border:none; }
+    .sb-title { font-size:12px; font-weight:bold; color:#aaa; border-bottom:1px solid #0f3460; padding-bottom:5px; }
+    #cal-banner { display:none; background:#f72585; color:#fff; border-radius:5px; padding:5px 7px; font-size:11px; text-align:center; animation:pulse 1s infinite; }
+    #cal-banner.on { display:block; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
-
-    .tool-section {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      padding: 8px;
-      border-radius: 8px;
-      background: #0d1b2a;
-      border: 2px solid transparent;
-      transition: border-color .15s;
-    }
-    .tool-section.active-cal { border-color: #f72585; }
-
-    .tool-name { font-size: 12px; font-weight: bold; }
-    .c-thin   { color: #4cc9f0; }
-    .c-thick  { color: #f8961e; }
-    .c-eraser { color: #f72585; }
-
-    .range-row { display: flex; gap: 6px; }
-    .range-row label {
-      display: flex;
-      flex-direction: column;
-      font-size: 10px;
-      color: #777;
-      flex: 1;
-    }
-    .range-row input {
-      background: #1a2a3a;
-      border: 1px solid #0f3460;
-      color: #eee;
-      font-family: monospace;
-      font-size: 14px;
-      padding: 3px 5px;
-      border-radius: 4px;
-      width: 100%;
-    }
-
-    .btn-read {
-      padding: 5px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-family: monospace;
-      font-size: 12px;
-      background: #1a3a5a;
-      color: #eee;
-    }
-    .btn-read.recording { background: #f72585; color: #fff; }
-    .btn-read:disabled  { opacity: .35; cursor: default; }
-
-    .live-reading {
-      font-size: 11px;
-      color: #4cc9f0;
-      min-height: 44px;
-      white-space: pre-line;
-      line-height: 1.5;
-    }
-
-    #btn-reset {
-      padding: 6px;
-      background: #2a1a1a;
-      color: #f72585;
-      border: 1px solid #f7258555;
-      border-radius: 6px;
-      cursor: pointer;
-      font-family: monospace;
-      font-size: 11px;
-    }
+    .tsec { display:flex; flex-direction:column; gap:4px; padding:7px; border-radius:7px; background:#0d1b2a; border:2px solid transparent; transition:border-color .15s; }
+    .tsec.cal { border-color:#f72585; }
+    .tn { font-size:11px; font-weight:bold; }
+    .ct { color:#4cc9f0; } .ck { color:#f8961e; } .ce { color:#f72585; }
+    .rr { display:flex; gap:5px; }
+    .rr label { display:flex; flex-direction:column; font-size:9px; color:#666; flex:1; }
+    .rr input { background:#1a2a3a; border:1px solid #0f3460; color:#eee; font-family:monospace; font-size:13px; padding:2px 4px; border-radius:3px; width:100%; }
+    .btn-rd { padding:4px; border:none; border-radius:5px; cursor:pointer; font-family:monospace; font-size:11px; background:#1a3a5a; color:#eee; }
+    .btn-rd.rec { background:#f72585; color:#fff; }
+    .btn-rd:disabled { opacity:.3; cursor:default; }
+    .live { font-size:10px; color:#4cc9f0; min-height:38px; white-space:pre-line; line-height:1.4; }
+    #btn-rst { padding:5px; background:#2a1a1a; color:#f72585; border:1px solid #f7258544; border-radius:5px; cursor:pointer; font-family:monospace; font-size:10px; }
   </style>
 </head>
 <body>
 
-<div id="debug">
-  <div class="dbg-block">
-    <span class="dbg-label">Puntos</span>
-    <span class="dbg-value" id="d-count">0</span>
-  </div>
-  <div class="dbg-block">
-    <span class="dbg-label">Radio avg (px)</span>
-    <span class="dbg-value" id="d-radius-avg">0.00</span>
-  </div>
-  <div class="dbg-block">
-    <span class="dbg-label">radiusX / Y</span>
-    <span class="dbg-value" id="d-radius">— / —</span>
-  </div>
-  <div class="dbg-block">
-    <span class="dbg-label">BBox W × H</span>
-    <span class="dbg-value" id="d-bbox">— × —</span>
-  </div>
-  <div id="mode-indicator" class="mode-none">Ninguno</div>
-  <button id="btn-clear">Limpiar</button>
-  <button id="btn-settings">⚙</button>
+<div id="bar">
+  <div class="b"><span class="bl">Puntos</span><span class="bv" id="d-pts">0</span></div>
+  <div class="b"><span class="bl">Radio avg</span><span class="bv" id="d-rad">0.00</span></div>
+  <div class="b"><span class="bl">Presión</span><span class="bv" id="d-prs">0.00</span></div>
+  <div class="b"><span class="bl">TiltMag</span><span class="bv" id="d-tlt">0.00</span></div>
+  <div class="b"><span class="bl">Speed px/ms</span><span class="bv" id="d-spd">0.00</span></div>
+  <div class="b"><span class="bl">Dir °</span><span class="bv" id="d-dir">0</span></div>
+  <div id="mode-badge" class="m-none">Ninguno</div>
+  <button id="btn-clr">Limpiar</button>
+  <button id="btn-cfg">⚙</button>
 </div>
 
 <div id="main">
-  <div id="canvas-wrap">
-    <canvas id="debug-canvas"></canvas>
-    <canvas id="draw-canvas"></canvas>
+  <div id="wrap">
+    <canvas id="oc"></canvas>
+    <canvas id="dc"></canvas>
   </div>
 
-  <div id="sidebar" class="hidden">
-    <div class="sb-title">Umbrales <small style="color:#555">(radio px)</small></div>
+  <div id="sb" class="hidden">
+    <div class="sb-title">Umbrales IR <small style="color:#555">(radio px)</small></div>
+    <div id="cal-banner">Toca con el instrumento…</div>
 
-    <div id="cal-banner">Tocando pantalla para leer…</div>
-
-    <!-- Lápiz fino -->
-    <div class="tool-section" id="sec-penThin">
-      <div class="tool-name c-thin">● Lápiz fino</div>
-      <div class="range-row">
+    <div class="tsec" id="sec-penThin">
+      <div class="tn ct">● Lápiz fino</div>
+      <div class="rr">
         <label>min<input type="number" id="min-penThin" step="0.1" min="0" value="0"></label>
         <label>max<input type="number" id="max-penThin" step="0.1" min="0" value="1.2"></label>
       </div>
-      <button class="btn-read" data-tool="penThin">▶ Leer</button>
-      <div class="live-reading" id="live-penThin"></div>
+      <button class="btn-rd" data-tool="penThin">▶ Leer</button>
+      <div class="live" id="live-penThin"></div>
     </div>
 
-    <!-- Lápiz grueso -->
-    <div class="tool-section" id="sec-penThick">
-      <div class="tool-name c-thick">● Lápiz grueso</div>
-      <div class="range-row">
+    <div class="tsec" id="sec-penThick">
+      <div class="tn ck">● Lápiz grueso</div>
+      <div class="rr">
         <label>min<input type="number" id="min-penThick" step="0.1" min="0" value="1.4"></label>
         <label>max<input type="number" id="max-penThick" step="0.1" min="0" value="2.8"></label>
       </div>
-      <button class="btn-read" data-tool="penThick">▶ Leer</button>
-      <div class="live-reading" id="live-penThick"></div>
+      <button class="btn-rd" data-tool="penThick">▶ Leer</button>
+      <div class="live" id="live-penThick"></div>
     </div>
 
-    <!-- Palma -->
-    <div class="tool-section" id="sec-eraser">
-      <div class="tool-name c-eraser">● Palma / Borrador</div>
-      <div class="range-row">
+    <div class="tsec" id="sec-eraser">
+      <div class="tn ce">● Palma / Borrador</div>
+      <div class="rr">
         <label>min<input type="number" id="min-eraser" step="0.1" min="0" value="13"></label>
         <label>max<input type="number" id="max-eraser" step="0.1" min="0" value="20"></label>
       </div>
-      <button class="btn-read" data-tool="eraser">▶ Leer</button>
-      <div class="live-reading" id="live-eraser"></div>
+      <button class="btn-rd" data-tool="eraser">▶ Leer</button>
+      <div class="live" id="live-eraser"></div>
     </div>
 
-    <button id="btn-reset">↺ Restaurar defaults</button>
+    <button id="btn-rst">↺ Restaurar defaults</button>
   </div>
 </div>
 
-<script>
-// ─── Canvases ──────────────────────────────────────────────────────────────
-const wrap = document.getElementById('canvas-wrap');
-const dc   = document.getElementById('draw-canvas');
+<script type="module">
+import { PenDetector } from './index.js';
+
+// ─── Canvas setup ──────────────────────────────────────────────────────────
+const wrap = document.getElementById('wrap');
+const dc   = document.getElementById('dc');
 const dctx = dc.getContext('2d');
-const bc   = document.getElementById('debug-canvas');
-const bctx = bc.getContext('2d');
+const oc   = document.getElementById('oc');
+const octx = oc.getContext('2d');
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const w = wrap.clientWidth, h = wrap.clientHeight;
-  [dc, bc].forEach(c => {
-    c.width  = w * dpr;
-    c.height = h * dpr;
-    c.style.width  = w + 'px';
-    c.style.height = h + 'px';
+  [dc, oc].forEach(c => {
+    c.width  = w * dpr; c.height = h * dpr;
+    c.style.width = w + 'px'; c.style.height = h + 'px';
     c.getContext('2d').scale(dpr, dpr);
   });
 }
 resize();
 window.addEventListener('resize', resize);
 
-// ─── Defaults y umbrales ───────────────────────────────────────────────────
-const TOLERANCE = 0.2;
+// ─── PenDetector ───────────────────────────────────────────────────────────
+const detector = new PenDetector({ element: dc, mode: 'ir' });
 
-const DEFAULTS = {
-  penThin:  { min: 0,    max: 1.2 },
-  penThick: { min: 1.4,  max: 2.8 },
-  eraser:   { min: 13,   max: 20  },
+// ─── Drawing ───────────────────────────────────────────────────────────────
+const STYLE = {
+  penThin:  { size: 2,  color: '#4cc9f0', erase: false },
+  penThick: { size: 14, color: '#f8961e', erase: false },
+  eraser:   { size: 60, color: null,      erase: true  },
+  none:     { size: 0,  color: null,      erase: false },
 };
+const paths = {}; // identifier → {x, y, tool}
 
-// Carga guardada o usa defaults
-let thresholds = (function () {
-  try {
-    const saved = JSON.parse(localStorage.getItem('pen-thresholds'));
-    if (saved && saved.penThin && saved.penThick && saved.eraser) return saved;
-  } catch (_) {}
-  return JSON.parse(JSON.stringify(DEFAULTS));
-})();
+detector.on('pendown', evt => {
+  updateDebug(evt);
+  paths[0] = { x: evt.x, y: evt.y, tool: evt.tool };
 
-function saveThresholds() {
-  try { localStorage.setItem('pen-thresholds', JSON.stringify(thresholds)); } catch (_) {}
-}
+  // Show dot on touch start
+  const s = STYLE[evt.tool] || STYLE.none;
+  if (s.size) {
+    dctx.beginPath();
+    dctx.arc(evt.x, evt.y, s.size / 2, 0, Math.PI * 2);
+    dctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
+    dctx.fillStyle = s.color || 'rgba(0,0,0,1)';
+    dctx.fill();
+    dctx.globalCompositeOperation = 'source-over';
+  }
+});
 
-// Escribe thresholds → inputs
-function syncInputs() {
-  for (const tool of ['penThin', 'penThick', 'eraser']) {
-    document.getElementById('min-' + tool).value = thresholds[tool].min;
-    document.getElementById('max-' + tool).value = thresholds[tool].max;
+detector.on('penmove', evt => {
+  updateDebug(evt);
+  const prev = paths[0];
+  if (!prev) return;
+
+  const s = STYLE[evt.tool] || STYLE.none;
+  if (s.size && prev) {
+    dctx.beginPath();
+    dctx.moveTo(prev.x, prev.y);
+    dctx.lineTo(evt.x, evt.y);
+    // Vary line width by pressure (pressure 0..1 → ±30% of base size)
+    dctx.lineWidth = s.size * (0.7 + evt.pressure * 0.6);
+    dctx.lineCap   = 'round';
+    dctx.lineJoin  = 'round';
+    dctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
+    dctx.strokeStyle = s.color || 'rgba(0,0,0,1)';
+    dctx.stroke();
+    dctx.globalCompositeOperation = 'source-over';
+  }
+
+  paths[0] = { x: evt.x, y: evt.y, tool: evt.tool };
+  drawOverlay(evt);
+});
+
+detector.on('penup', () => {
+  delete paths[0];
+  clearOverlay();
+  resetDebug();
+});
+
+// ─── Overlay canvas (debug dots + bbox) ────────────────────────────────────
+function drawOverlay(evt) {
+  const w = oc.width / (window.devicePixelRatio || 1);
+  const h = oc.height / (window.devicePixelRatio || 1);
+  octx.clearRect(0, 0, w, h);
+
+  // Draw each raw touch point
+  if (evt.raw?.touches) {
+    for (const t of evt.raw.touches) {
+      octx.beginPath();
+      octx.arc(t.x, t.y, 4, 0, Math.PI * 2);
+      octx.fillStyle = '#ffffff55';
+      octx.fill();
+      if (t.radiusX > 1) {
+        octx.beginPath();
+        octx.ellipse(t.x, t.y, t.radiusX, t.radiusY || t.radiusX, 0, 0, Math.PI * 2);
+        octx.strokeStyle = '#ffffff33';
+        octx.lineWidth = 1;
+        octx.stroke();
+      }
+    }
+  }
+
+  // Bounding box
+  const b = evt.bbox;
+  if (b && (b.w > 4 || b.h > 4)) {
+    octx.strokeStyle = '#ffffff33';
+    octx.lineWidth = 1;
+    octx.setLineDash([3, 3]);
+    octx.strokeRect(b.x, b.y, b.w, b.h);
+    octx.setLineDash([]);
+    octx.fillStyle = '#aaa';
+    octx.font = '10px monospace';
+    octx.fillText(`${Math.round(b.w)}×${Math.round(b.h)}`, b.x + 2, b.y - 3);
   }
 }
-syncInputs();
 
-// Inputs → thresholds en tiempo real (el usuario edita manualmente)
-for (const tool of ['penThin', 'penThick', 'eraser']) {
-  for (const bound of ['min', 'max']) {
-    document.getElementById(bound + '-' + tool).addEventListener('input', () => {
-      const val = parseFloat(document.getElementById(bound + '-' + tool).value);
-      if (!isNaN(val)) {
-        thresholds[tool][bound] = val;
-        saveThresholds();
+function clearOverlay() {
+  const w = oc.width / (window.devicePixelRatio || 1);
+  const h = oc.height / (window.devicePixelRatio || 1);
+  octx.clearRect(0, 0, w, h);
+}
+
+// ─── Debug bar ─────────────────────────────────────────────────────────────
+function updateDebug(evt) {
+  document.getElementById('d-pts').textContent = evt.pointCount;
+  document.getElementById('d-rad').textContent = (evt.raw?.metric ?? 0).toFixed(2);
+  document.getElementById('d-prs').textContent = evt.pressure.toFixed(2);
+  document.getElementById('d-tlt').textContent = evt.tiltMagnitude.toFixed(2);
+  document.getElementById('d-spd').textContent = evt.speed.toFixed(2);
+  document.getElementById('d-dir').textContent = Math.round(evt.direction);
+  const mb = document.getElementById('mode-badge');
+  mb.textContent = evt.tool;
+  mb.className   = 'm-' + evt.tool;
+}
+function resetDebug() {
+  ['d-pts','d-rad','d-prs','d-tlt','d-spd','d-dir'].forEach(id =>
+    document.getElementById(id).textContent = '0'
+  );
+  const mb = document.getElementById('mode-badge');
+  mb.textContent = 'Ninguno'; mb.className = 'm-none';
+}
+
+// ─── Calibration UI ────────────────────────────────────────────────────────
+// Sync thresholds → inputs on load
+function syncInputs(thr) {
+  for (const tool of ['penThin','penThick','eraser']) {
+    document.getElementById('min-'+tool).value = thr[tool].min;
+    document.getElementById('max-'+tool).value = thr[tool].max;
+  }
+}
+syncInputs(detector.thresholds);
+
+// Manual input edits → update detector thresholds live
+for (const tool of ['penThin','penThick','eraser']) {
+  for (const b of ['min','max']) {
+    document.getElementById(b+'-'+tool).addEventListener('input', () => {
+      const v = parseFloat(document.getElementById(b+'-'+tool).value);
+      if (!isNaN(v)) {
+        const t = { ...detector.thresholds };
+        t[tool] = { ...t[tool], [b]: v };
+        detector.setThresholds(t);
       }
     });
   }
 }
 
-// ─── Modos ─────────────────────────────────────────────────────────────────
-const MODES = {
-  none:     { label: 'Ninguno',      cls: 'mode-none',     size: 0,  color: null,      erase: false },
-  penThin:  { label: 'Lápiz fino',   cls: 'mode-penThin',  size: 2,  color: '#4cc9f0', erase: false },
-  penThick: { label: 'Lápiz grueso', cls: 'mode-penThick', size: 14, color: '#f8961e', erase: false },
-  eraser:   { label: 'Borrador',     cls: 'mode-eraser',   size: 60, color: null,      erase: true  },
-};
-
-// radio = promedio de (radiusX + radiusY)/2 de todos los touches activos
-function detectMode(radio) {
-  if (radio >= thresholds.penThin.min  && radio <= thresholds.penThin.max)  return 'penThin';
-  if (radio >= thresholds.penThick.min && radio <= thresholds.penThick.max) return 'penThick';
-  if (radio >= thresholds.eraser.min   && radio <= thresholds.eraser.max)   return 'eraser';
-  return 'none';
-}
-
-// ─── Geometría ─────────────────────────────────────────────────────────────
-function getBBox(touches) {
-  if (!touches.length) return null;
-  const rect = dc.getBoundingClientRect();
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const t of touches) {
-    const x = t.clientX - rect.left, y = t.clientY - rect.top;
-    if (x < minX) minX = x;  if (x > maxX) maxX = x;
-    if (y < minY) minY = y;  if (y > maxY) maxY = y;
-  }
-  const w = maxX - minX, h = maxY - minY;
-  return { minX, minY, w, h, area: w * h };  // 0 para punto único → 0 kpx²
-}
-
-// Promedio de (radiusX + radiusY)/2 de todos los touches → un solo escalar
-function calcRadio(touches) {
-  if (!touches.length) return 0;
-  let sum = 0;
-  for (const t of touches) sum += ((t.radiusX || 0) + (t.radiusY || 0)) / 2;
-  return sum / touches.length;
-}
-
-// ─── Debug bar ─────────────────────────────────────────────────────────────
-function updateDebug(touches) {
-  const bbox  = getBBox(touches);
-  const radio = calcRadio(touches);
-  const mode  = detectMode(radio);
-  const m     = MODES[mode];
-
-  // radiusX / radiusY del primer touch (referencia)
-  const t0 = touches.length ? touches[0] : null;
-  const rx = t0 ? (t0.radiusX || 0) : 0;
-  const ry = t0 ? (t0.radiusY || 0) : 0;
-
-  document.getElementById('d-count').textContent      = touches.length;
-  document.getElementById('d-radius-avg').textContent = radio.toFixed(2);
-  document.getElementById('d-radius').textContent     = touches.length
-    ? `${rx.toFixed(1)} / ${ry.toFixed(1)}`
-    : '— / —';
-  document.getElementById('d-bbox').textContent = bbox
-    ? `${Math.round(bbox.w)} × ${Math.round(bbox.h)}`
-    : '— × —';
-
-  const mi = document.getElementById('mode-indicator');
-  mi.textContent = m.label;
-  mi.className   = m.cls;
-
-  drawOverlay(touches, bbox, mode);
-  return { mode, radio };
-}
-
-// ─── Debug canvas overlay ──────────────────────────────────────────────────
-function drawOverlay(touches, bbox, mode) {
-  const cw = bc.width / (window.devicePixelRatio || 1);
-  const ch = bc.height / (window.devicePixelRatio || 1);
-  bctx.clearRect(0, 0, cw, ch);
-  if (!touches.length) return;
-
-  const m = MODES[mode];
-  const dot = m.erase ? '#f72585' : (m.color || '#fff');
-  const rect = dc.getBoundingClientRect();
-
-  for (const t of touches) {
-    const x = t.clientX - rect.left, y = t.clientY - rect.top;
-    bctx.beginPath();
-    bctx.arc(x, y, 5, 0, Math.PI * 2);
-    bctx.fillStyle = dot;
-    bctx.fill();
-    if ((t.radiusX || 0) > 1) {
-      bctx.beginPath();
-      bctx.ellipse(x, y, t.radiusX, t.radiusY || t.radiusX, 0, 0, Math.PI * 2);
-      bctx.strokeStyle = 'rgba(255,255,255,.2)';
-      bctx.lineWidth = 1;
-      bctx.stroke();
-    }
-  }
-
-  if (bbox && (bbox.w > 4 || bbox.h > 4)) {
-    bctx.strokeStyle = m.erase ? '#f7258866' : '#ffffff44';
-    bctx.lineWidth = 1;
-    bctx.setLineDash([4, 4]);
-    bctx.strokeRect(bbox.minX, bbox.minY, bbox.w, bbox.h);
-    bctx.setLineDash([]);
-    bctx.fillStyle = '#fff';
-    bctx.font = '11px monospace';
-    bctx.fillText(
-      `${Math.round(bbox.w)}×${Math.round(bbox.h)} px`,
-      bbox.minX + 3, bbox.minY - 4
-    );
-  }
-}
-
-// ─── Dibujo ────────────────────────────────────────────────────────────────
-const paths = {};
-
-function canvasPos(t) {
-  const r = dc.getBoundingClientRect();
-  return { x: t.clientX - r.left, y: t.clientY - r.top };
-}
-
-function drawStep(from, to, mode) {
-  const m = MODES[mode];
-  if (!m.size) return;
-  dctx.beginPath();
-  dctx.moveTo(from.x, from.y);
-  dctx.lineTo(to.x, to.y);
-  dctx.lineWidth  = m.size;
-  dctx.lineCap    = 'round';
-  dctx.lineJoin   = 'round';
-  if (m.erase) {
-    dctx.globalCompositeOperation = 'destination-out';
-    dctx.strokeStyle = 'rgba(0,0,0,1)';
-  } else {
-    dctx.globalCompositeOperation = 'source-over';
-    dctx.strokeStyle = m.color;
-  }
-  dctx.stroke();
-  dctx.globalCompositeOperation = 'source-over';
-}
-
-// ─── Calibración ───────────────────────────────────────────────────────────
-let calState = null;   // null | 'penThin' | 'penThick' | 'eraser'
-let calMin, calMax, calCount;
-
-function startCal(tool) {
-  calState = tool;
-  calMin   = Infinity;
-  calMax   = -Infinity;
-  calCount = 0;
-
-  document.getElementById('sec-' + tool).classList.add('active-cal');
-  document.getElementById('cal-banner').classList.add('visible');
-  document.getElementById('live-' + tool).textContent = 'Toca con el instrumento…';
-
-  document.querySelectorAll('.btn-read').forEach(b => {
-    if (b.dataset.tool === tool) {
-      b.textContent = '■ Guardar';
-      b.classList.add('recording');
-    } else {
-      b.disabled = true;
-    }
-  });
-}
-
-function finishCal(tool) {
-  if (calCount > 0) {
-    // Aplica tolerancia y guarda
-    thresholds[tool] = {
-      min: parseFloat(Math.max(0, calMin - TOLERANCE).toFixed(2)),
-      max: parseFloat((calMax + TOLERANCE).toFixed(2)),
-    };
-    saveThresholds();
-
-    // Escribe en los inputs
-    document.getElementById('min-' + tool).value = thresholds[tool].min;
-    document.getElementById('max-' + tool).value = thresholds[tool].max;
-
-    document.getElementById('live-' + tool).textContent =
-      `Guardado:\nmin ${thresholds[tool].min}  max ${thresholds[tool].max}\n(${calCount} lecturas, ±${TOLERANCE})`;
-  } else {
-    document.getElementById('live-' + tool).textContent = 'Sin lecturas — no guardado';
-  }
-
-  cleanupCal(tool);
-}
-
-function cleanupCal(tool) {
-  calState = null;
-  document.getElementById('sec-' + tool).classList.remove('active-cal');
-  document.getElementById('cal-banner').classList.remove('visible');
-
-  document.querySelectorAll('.btn-read').forEach(b => {
-    if (b.dataset.tool === tool) {
-      b.textContent = '▶ Leer';
-      b.classList.remove('recording');
-    } else {
-      b.disabled = false;
-    }
-  });
-}
-
-// Registra una lectura de radio durante calibración
-function recordRadio(radio) {
-  if (calMin > radio) calMin = radio;
-  if (calMax < radio) calMax = radio;
-  calCount++;
-
-  const liveEl = document.getElementById('live-' + calState);
-  liveEl.textContent =
-    `actual: ${radio.toFixed(2)}\nmin: ${calMin.toFixed(2)}  max: ${calMax.toFixed(2)}\n(${calCount} lecturas)`;
-
-  // Actualiza inputs en tiempo real con rango + tolerancia
-  document.getElementById('min-' + calState).value = Math.max(0, calMin - TOLERANCE).toFixed(2);
-  document.getElementById('max-' + calState).value = (calMax + TOLERANCE).toFixed(2);
-}
-
-document.querySelectorAll('.btn-read').forEach(btn => {
+// Leer / Guardar buttons
+document.querySelectorAll('.btn-rd').forEach(btn => {
   btn.addEventListener('click', () => {
     const tool = btn.dataset.tool;
-    if (calState === tool) {
-      finishCal(tool);
-    } else if (!calState) {
-      startCal(tool);
+    if (btn.classList.contains('rec')) {
+      // Stop → save
+      const result = detector.stopCalibration();
+      btn.textContent = '▶ Leer';
+      btn.classList.remove('rec');
+      document.getElementById('sec-'+tool).classList.remove('cal');
+      document.getElementById('cal-banner').classList.remove('on');
+      document.querySelectorAll('.btn-rd').forEach(b => b.disabled = false);
+      if (result) syncInputs(detector.thresholds);
+    } else {
+      // Start
+      detector.startCalibration(tool);
+      btn.textContent = '■ Guardar';
+      btn.classList.add('rec');
+      document.getElementById('sec-'+tool).classList.add('cal');
+      document.getElementById('cal-banner').classList.add('on');
+      document.getElementById('live-'+tool).textContent = 'Toca con el instrumento…';
+      document.querySelectorAll('.btn-rd').forEach(b => { if (b !== btn) b.disabled = true; });
     }
   });
 });
 
-// ─── Touch events ──────────────────────────────────────────────────────────
-// IMPORTANTE: no bloqueamos el canvas durante calibración,
-// los touches siempre llegan aquí.
-
-dc.addEventListener('touchstart', e => {
-  e.preventDefault();
-  const { mode, radio } = updateDebug(e.touches);
-
-  if (calState) {
-    if (e.touches.length > 0) recordRadio(radio);
-    return;
-  }
-
-  for (const t of e.changedTouches) {
-    paths[t.identifier] = { pos: canvasPos(t), mode };
-  }
-}, { passive: false });
-
-dc.addEventListener('touchmove', e => {
-  e.preventDefault();
-  const { mode, radio } = updateDebug(e.touches);
-
-  if (calState) {
-    if (e.touches.length > 0) recordRadio(radio);
-    return;
-  }
-
-  for (const t of e.changedTouches) {
-    const newPos = canvasPos(t);
-    const entry  = paths[t.identifier];
-    if (entry) {
-      entry.mode = mode;
-      drawStep(entry.pos, newPos, mode);
-      entry.pos = newPos;
-    } else {
-      paths[t.identifier] = { pos: newPos, mode };
-    }
-  }
-}, { passive: false });
-
-dc.addEventListener('touchend', e => {
-  e.preventDefault();
-  for (const t of e.changedTouches) delete paths[t.identifier];
-  updateDebug(e.touches);
-}, { passive: false });
-
-dc.addEventListener('touchcancel', e => {
-  for (const t of e.changedTouches) delete paths[t.identifier];
-  updateDebug(e.touches);
-}, { passive: false });
-
-// ─── Mouse fallback ─────────────────────────────────────────────────────────
-let mouseDown = false, lastMouse = null;
-dc.addEventListener('mousedown', e => {
-  if (calState) return;
-  mouseDown = true;
-  const r = dc.getBoundingClientRect();
-  lastMouse = { x: e.clientX - r.left, y: e.clientY - r.top };
-});
-dc.addEventListener('mousemove', e => {
-  if (!mouseDown || calState) return;
-  const r = dc.getBoundingClientRect();
-  const p = { x: e.clientX - r.left, y: e.clientY - r.top };
-  drawStep(lastMouse, p, 'penThin');
-  lastMouse = p;
-});
-dc.addEventListener('mouseup', () => { mouseDown = false; lastMouse = null; });
-
-// ─── Sidebar toggle ─────────────────────────────────────────────────────────
-const sidebar  = document.getElementById('sidebar');
-const btnSet   = document.getElementById('btn-settings');
-btnSet.addEventListener('click', () => {
-  sidebar.classList.toggle('hidden');
-  btnSet.classList.toggle('active');
-  setTimeout(resize, 250);
+detector.on('calibration:reading', ({ tool, current, min, max, count, preview }) => {
+  document.getElementById('live-'+tool).textContent =
+    `actual: ${current.toFixed(2)}\nmin: ${min.toFixed(2)}  max: ${max.toFixed(2)}\n`+
+    `→ guardará: ${preview.min} – ${preview.max}\n(${count} lecturas)`;
+  document.getElementById('min-'+tool).value = preview.min;
+  document.getElementById('max-'+tool).value = preview.max;
 });
 
-// ─── Limpiar / Reset ────────────────────────────────────────────────────────
-document.getElementById('btn-clear').addEventListener('click', () => {
-  const w = dc.width  / (window.devicePixelRatio || 1);
-  const h = dc.height / (window.devicePixelRatio || 1);
+detector.on('calibration:done', ({ tool, min, max, readings }) => {
+  document.getElementById('live-'+tool).textContent =
+    `✓ Guardado: ${min} – ${max}\n(${readings} lecturas)`;
+});
+
+// Sidebar toggle
+const sb = document.getElementById('sb');
+const btnCfg = document.getElementById('btn-cfg');
+btnCfg.addEventListener('click', () => {
+  sb.classList.toggle('hidden');
+  btnCfg.classList.toggle('on');
+  setTimeout(resize, 220);
+});
+
+// Clear canvas
+document.getElementById('btn-clr').addEventListener('click', () => {
+  const w = dc.width / (window.devicePixelRatio||1);
+  const h = dc.height / (window.devicePixelRatio||1);
   dctx.clearRect(0, 0, w, h);
 });
 
-document.getElementById('btn-reset').addEventListener('click', () => {
-  thresholds = JSON.parse(JSON.stringify(DEFAULTS));
-  saveThresholds();
-  syncInputs();
+// Reset defaults
+document.getElementById('btn-rst').addEventListener('click', () => {
+  detector.setThresholds({ penThin:{min:0,max:1.2}, penThick:{min:1.4,max:2.8}, eraser:{min:13,max:20} });
+  syncInputs(detector.thresholds);
 });
 </script>
 </body>
