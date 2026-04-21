@@ -24,9 +24,19 @@
     .m-penThin  { background:#0077b6; color:#fff; }
     .m-penThick { background:#f8961e; color:#000; }
     .m-eraser   { background:#f72585; color:#fff; }
+    /* mode selector */
+    #mode-sel { display:flex; gap:0; border:1px solid #0f3460; border-radius:7px; overflow:hidden; }
+    #mode-sel button {
+      padding:4px 10px; background:#0d1b2a; color:#777; border:none; cursor:pointer;
+      font-family:monospace; font-size:12px; font-weight:bold; transition:background .1s,color .1s;
+    }
+    #mode-sel button.active { background:#4cc9f0; color:#000; }
+
     #btn-cfg { margin-left:auto; padding:4px 9px; background:#0f3460; color:#eee; border:1px solid #1a5276; border-radius:7px; cursor:pointer; font-size:15px; }
     #btn-cfg.on { background:#4cc9f0; color:#000; }
     #btn-clr { padding:4px 10px; background:#e63946; color:#fff; border:none; border-radius:7px; cursor:pointer; font-family:monospace; }
+    /* hide calibration sidebar when Ink mode */
+    body.ink-mode .ir-only { display:none !important; }
 
     /* ── main ── */
     #main { flex:1; display:flex; overflow:hidden; }
@@ -63,15 +73,20 @@
 <body>
 
 <div id="bar">
+  <!-- Input mode selector -->
+  <div id="mode-sel">
+    <button id="btn-ir"  class="active">IR</button>
+    <button id="btn-ink">Ink</button>
+  </div>
   <div class="b"><span class="bl">Puntos</span><span class="bv" id="d-pts">0</span></div>
-  <div class="b"><span class="bl">Radio avg</span><span class="bv" id="d-rad">0.00</span></div>
-  <div class="b"><span class="bl">Presión</span><span class="bv" id="d-prs">0.00</span></div>
+  <div class="b"><span class="bl">Radio/Presión</span><span class="bv" id="d-rad">0.00</span></div>
+  <div class="b"><span class="bl">Presión norm</span><span class="bv" id="d-prs">0.00</span></div>
   <div class="b"><span class="bl">TiltMag</span><span class="bv" id="d-tlt">0.00</span></div>
   <div class="b"><span class="bl">Speed px/ms</span><span class="bv" id="d-spd">0.00</span></div>
   <div class="b"><span class="bl">Dir °</span><span class="bv" id="d-dir">0</span></div>
   <div id="mode-badge" class="m-none">Ninguno</div>
   <button id="btn-clr">Limpiar</button>
-  <button id="btn-cfg">⚙</button>
+  <button id="btn-cfg" class="ir-only">⚙ IR</button>
 </div>
 
 <div id="main">
@@ -140,63 +155,94 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// ─── PenDetector ───────────────────────────────────────────────────────────
-const detector = new PenDetector({ element: dc, mode: 'ir' });
+// ─── PenDetector — recreated on mode switch ────────────────────────────────
+let detector = null;
+let currentMode = 'ir';
+
+function createDetector(mode) {
+  if (detector) detector.destroy();
+  detector = new PenDetector({ element: dc, mode });
+  currentMode = mode;
+  attachEvents();
+  if (mode === 'ir') syncInputs(detector.thresholds);
+  document.body.classList.toggle('ink-mode', mode === 'ink');
+  // update label for raw metric field
+  document.querySelector('#d-rad').previousElementSibling.textContent =
+    mode === 'ir' ? 'Radio avg' : 'Presión raw';
+}
+
+// Mode selector buttons
+document.getElementById('btn-ir').addEventListener('click', () => {
+  if (currentMode === 'ir') return;
+  document.getElementById('btn-ir').classList.add('active');
+  document.getElementById('btn-ink').classList.remove('active');
+  createDetector('ir');
+});
+document.getElementById('btn-ink').addEventListener('click', () => {
+  if (currentMode === 'ink') return;
+  document.getElementById('btn-ink').classList.add('active');
+  document.getElementById('btn-ir').classList.remove('active');
+  createDetector('ink');
+});
 
 // ─── Drawing ───────────────────────────────────────────────────────────────
 const STYLE = {
   penThin:  { size: 2,  color: '#4cc9f0', erase: false },
   penThick: { size: 14, color: '#f8961e', erase: false },
   eraser:   { size: 60, color: null,      erase: true  },
-  none:     { size: 0,  color: null,      erase: false },
+  none:     { size: 2,  color: '#888',    erase: false }, // fallback visible
 };
-const paths = {}; // identifier → {x, y, tool}
 
-detector.on('pendown', evt => {
-  updateDebug(evt);
-  paths[0] = { x: evt.x, y: evt.y, tool: evt.tool };
+let prev = null; // last point for drawing
 
-  // Show dot on touch start
+function drawSegment(from, to, evt) {
   const s = STYLE[evt.tool] || STYLE.none;
-  if (s.size) {
-    dctx.beginPath();
-    dctx.arc(evt.x, evt.y, s.size / 2, 0, Math.PI * 2);
-    dctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
-    dctx.fillStyle = s.color || 'rgba(0,0,0,1)';
-    dctx.fill();
-    dctx.globalCompositeOperation = 'source-over';
-  }
-});
+  if (!s.size) return;
+  dctx.beginPath();
+  dctx.moveTo(from.x, from.y);
+  dctx.lineTo(to.x, to.y);
+  dctx.lineWidth = s.size * (0.7 + evt.pressure * 0.6); // pressure → width
+  dctx.lineCap  = 'round';
+  dctx.lineJoin = 'round';
+  dctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
+  dctx.strokeStyle = s.color || 'rgba(0,0,0,1)';
+  dctx.stroke();
+  dctx.globalCompositeOperation = 'source-over';
+}
 
-detector.on('penmove', evt => {
-  updateDebug(evt);
-  const prev = paths[0];
-  if (!prev) return;
+function attachEvents() {
+  detector.on('pendown', evt => {
+    updateDebug(evt);
+    prev = { x: evt.x, y: evt.y };
+  });
 
-  const s = STYLE[evt.tool] || STYLE.none;
-  if (s.size && prev) {
-    dctx.beginPath();
-    dctx.moveTo(prev.x, prev.y);
-    dctx.lineTo(evt.x, evt.y);
-    // Vary line width by pressure (pressure 0..1 → ±30% of base size)
-    dctx.lineWidth = s.size * (0.7 + evt.pressure * 0.6);
-    dctx.lineCap   = 'round';
-    dctx.lineJoin  = 'round';
-    dctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
-    dctx.strokeStyle = s.color || 'rgba(0,0,0,1)';
-    dctx.stroke();
-    dctx.globalCompositeOperation = 'source-over';
-  }
+  detector.on('penmove', evt => {
+    updateDebug(evt);
+    if (prev) drawSegment(prev, evt, evt);
+    prev = { x: evt.x, y: evt.y };
+    drawOverlay(evt);
+  });
 
-  paths[0] = { x: evt.x, y: evt.y, tool: evt.tool };
-  drawOverlay(evt);
-});
+  detector.on('penup', () => {
+    prev = null;
+    clearOverlay();
+    resetDebug();
+  });
 
-detector.on('penup', () => {
-  delete paths[0];
-  clearOverlay();
-  resetDebug();
-});
+  // Calibration events (IR only)
+  detector.on('calibration:reading', ({ tool, current, min, max, count, preview }) => {
+    document.getElementById('live-'+tool).textContent =
+      `actual: ${current.toFixed(2)}\nmin: ${min.toFixed(2)}  max: ${max.toFixed(2)}\n`+
+      `→ guardará: ${preview.min} – ${preview.max}\n(${count} lecturas)`;
+    document.getElementById('min-'+tool).value = preview.min;
+    document.getElementById('max-'+tool).value = preview.max;
+  });
+
+  detector.on('calibration:done', ({ tool, min, max, readings }) => {
+    document.getElementById('live-'+tool).textContent =
+      `✓ Guardado: ${min} – ${max}\n(${readings} lecturas)`;
+  });
+}
 
 // ─── Overlay canvas (debug dots + bbox) ────────────────────────────────────
 function drawOverlay(evt) {
@@ -243,8 +289,9 @@ function clearOverlay() {
 
 // ─── Debug bar ─────────────────────────────────────────────────────────────
 function updateDebug(evt) {
+  const raw = evt.raw?.metric ?? evt.raw?.pressure ?? 0;
   document.getElementById('d-pts').textContent = evt.pointCount;
-  document.getElementById('d-rad').textContent = (evt.raw?.metric ?? 0).toFixed(2);
+  document.getElementById('d-rad').textContent = raw.toFixed(2);
   document.getElementById('d-prs').textContent = evt.pressure.toFixed(2);
   document.getElementById('d-tlt').textContent = evt.tiltMagnitude.toFixed(2);
   document.getElementById('d-spd').textContent = evt.speed.toFixed(2);
@@ -255,26 +302,24 @@ function updateDebug(evt) {
 }
 function resetDebug() {
   ['d-pts','d-rad','d-prs','d-tlt','d-spd','d-dir'].forEach(id =>
-    document.getElementById(id).textContent = '0'
-  );
+    document.getElementById(id).textContent = '0');
   const mb = document.getElementById('mode-badge');
   mb.textContent = 'Ninguno'; mb.className = 'm-none';
 }
 
-// ─── Calibration UI ────────────────────────────────────────────────────────
-// Sync thresholds → inputs on load
+// ─── Calibration UI (IR only) ──────────────────────────────────────────────
 function syncInputs(thr) {
+  if (!thr) return;
   for (const tool of ['penThin','penThick','eraser']) {
     document.getElementById('min-'+tool).value = thr[tool].min;
     document.getElementById('max-'+tool).value = thr[tool].max;
   }
 }
-syncInputs(detector.thresholds);
 
-// Manual input edits → update detector thresholds live
 for (const tool of ['penThin','penThick','eraser']) {
   for (const b of ['min','max']) {
     document.getElementById(b+'-'+tool).addEventListener('input', () => {
+      if (currentMode !== 'ir') return;
       const v = parseFloat(document.getElementById(b+'-'+tool).value);
       if (!isNaN(v)) {
         const t = { ...detector.thresholds };
@@ -285,12 +330,11 @@ for (const tool of ['penThin','penThick','eraser']) {
   }
 }
 
-// Leer / Guardar buttons
 document.querySelectorAll('.btn-rd').forEach(btn => {
   btn.addEventListener('click', () => {
+    if (currentMode !== 'ir') return;
     const tool = btn.dataset.tool;
     if (btn.classList.contains('rec')) {
-      // Stop → save
       const result = detector.stopCalibration();
       btn.textContent = '▶ Leer';
       btn.classList.remove('rec');
@@ -299,7 +343,6 @@ document.querySelectorAll('.btn-rd').forEach(btn => {
       document.querySelectorAll('.btn-rd').forEach(b => b.disabled = false);
       if (result) syncInputs(detector.thresholds);
     } else {
-      // Start
       detector.startCalibration(tool);
       btn.textContent = '■ Guardar';
       btn.classList.add('rec');
@@ -311,40 +354,30 @@ document.querySelectorAll('.btn-rd').forEach(btn => {
   });
 });
 
-detector.on('calibration:reading', ({ tool, current, min, max, count, preview }) => {
-  document.getElementById('live-'+tool).textContent =
-    `actual: ${current.toFixed(2)}\nmin: ${min.toFixed(2)}  max: ${max.toFixed(2)}\n`+
-    `→ guardará: ${preview.min} – ${preview.max}\n(${count} lecturas)`;
-  document.getElementById('min-'+tool).value = preview.min;
-  document.getElementById('max-'+tool).value = preview.max;
-});
-
-detector.on('calibration:done', ({ tool, min, max, readings }) => {
-  document.getElementById('live-'+tool).textContent =
-    `✓ Guardado: ${min} – ${max}\n(${readings} lecturas)`;
-});
-
 // Sidebar toggle
 const sb = document.getElementById('sb');
-const btnCfg = document.getElementById('btn-cfg');
-btnCfg.addEventListener('click', () => {
+document.getElementById('btn-cfg').addEventListener('click', () => {
   sb.classList.toggle('hidden');
-  btnCfg.classList.toggle('on');
+  document.getElementById('btn-cfg').classList.toggle('on');
   setTimeout(resize, 220);
 });
 
-// Clear canvas
+// Clear
 document.getElementById('btn-clr').addEventListener('click', () => {
   const w = dc.width / (window.devicePixelRatio||1);
   const h = dc.height / (window.devicePixelRatio||1);
   dctx.clearRect(0, 0, w, h);
 });
 
-// Reset defaults
+// Reset IR defaults
 document.getElementById('btn-rst').addEventListener('click', () => {
+  if (currentMode !== 'ir') return;
   detector.setThresholds({ penThin:{min:0,max:1.2}, penThick:{min:1.4,max:2.8}, eraser:{min:13,max:20} });
   syncInputs(detector.thresholds);
 });
+
+// ─── Start with IR mode ────────────────────────────────────────────────────
+createDetector('ir');
 </script>
 </body>
 </html>

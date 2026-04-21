@@ -63,8 +63,9 @@ export class IRDetector extends EventEmitter {
   }
 
   // Touch with the largest average radius → most relevant for tilt
+  // Array.from() required: TouchList has no .reduce()
   _primary(touches) {
-    return touches.reduce((best, t) => {
+    return Array.from(touches).reduce((best, t) => {
       const r = ((t.radiusX || 0) + (t.radiusY || 0)) / 2;
       const b = ((best.radiusX || 0) + (best.radiusY || 0)) / 2;
       return r > b ? t : best;
