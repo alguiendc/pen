@@ -10,7 +10,7 @@
  *   thresholds — override default IR ranges
  *   smooth    — { xy: 0..1, pressure: 0..1 }  0=raw, 1=max smooth (default: xy=0.2, pressure=0.6)
  */
-export const VERSION = '1.1';
+export const VERSION = '1.2';
 
 const DEFAULTS = {
   penThin:  { min: 0,   max: 1.2 },
@@ -29,6 +29,7 @@ export class PenDetector {
     this._active     = new Set();
     this._b          = {};
     this._strokeTool = null;
+    this._trackId    = null; // Touch.identifier of the tracked pen contact
 
     // Smoothing coefficients  (weight of the OLD value, 0=raw, 1=frozen)
     this._smXY = Math.max(0, Math.min(0.95, smooth.xy       ?? 0.2));
@@ -55,8 +56,12 @@ export class PenDetector {
     this._b.tm = e => { e.preventDefault(); this._irHandle(e); };
     this._b.te = e => {
       e.preventDefault();
-      if (!e.touches.length) {
-        this._strokeTool = null;
+      // End the stroke when the tracked pen contact lifts, even if other
+      // fingers are still on the screen.
+      const trackedLifted = this._trackId !== null &&
+        Array.from(e.changedTouches).some(t => t.identifier === this._trackId);
+      if (!e.touches.length || trackedLifted) {
+        this._strokeTool = null; this._trackId = null;
         this._sPos = null; this._velPos = null; this._sP = 0.5;
         this._emit('penup', {});
       }
@@ -72,40 +77,39 @@ export class PenDetector {
     if (!ts.length) return;
     const rect = this._el.getBoundingClientRect();
 
-    let rSum = 0, cx = 0, cy = 0;
+    // Compute full-contact stats (bbox, pointCount, avgRadius) for debug/calibration.
+    let rSum = 0;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const t of ts) {
       rSum += ((t.radiusX || 0) + (t.radiusY || 0)) / 2;
-      const x = t.clientX - rect.left, y = t.clientY - rect.top;
-      cx += x; cy += y;
-      if (x < minX) minX = x; if (x > maxX) maxX = x;
-      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      const tx = t.clientX - rect.left, ty = t.clientY - rect.top;
+      if (tx < minX) minX = tx; if (tx > maxX) maxX = tx;
+      if (ty < minY) minY = ty; if (ty > maxY) maxY = ty;
     }
-    const n         = ts.length;
-    const bboxW     = maxX - minX;
-    const bboxH     = maxY - minY;
-    const bboxArea  = bboxW * bboxH;
-    const avgRadius = rSum / n;
-    const metric    = avgRadius;
-    const t0 = ts[0];
-    const rx = t0.radiusX || 0, ry = t0.radiusY || 0;
+    const n        = ts.length;
+    const bboxW    = maxX - minX, bboxH = maxY - minY, bboxArea = bboxW * bboxH;
+    const metric   = rSum / n; // avgRadius across all contacts
 
-    const x  = cx / n, y = cy / n;
-
-    // Only classify and emit 'pendown' on the FIRST touch of a stroke.
-    // Additional touchstart events (tilt, accidental finger) emit 'penmove'.
+    // First touch: classify tool and lock the touch ID we'll track.
     const isFirst = e.type === 'touchstart' && this._strokeTool === null;
     if (isFirst) {
       this._strokeTool = this._classify(metric);
+      this._trackId    = ts[0].identifier;
       this._sPos = null; this._velPos = null; this._sP = 0.5;
     }
     const tool = this._strokeTool || 'none';
 
-    const { x: sx, y: sy } = this._smoothXY(x, y);
-    const { pressure, velocity } = this._velPressure(x, y);
+    // Palm rejection: use ONLY the tracked touch for position.
+    // Any other contacts (fingers, palm) are completely ignored for drawing.
+    const tracked = Array.from(ts).find(t => t.identifier === this._trackId) || ts[0];
+    const rx = tracked.radiusX || 0, ry = tracked.radiusY || 0;
+    const rawX = tracked.clientX - rect.left, rawY = tracked.clientY - rect.top;
+
+    const { x, y } = this._smoothXY(rawX, rawY);
+    const { pressure, velocity } = this._velPressure(rawX, rawY);
 
     this._emit(isFirst ? 'pendown' : 'penmove', {
-      x: sx, y: sy, tool, pressure, velocity, metric,
+      x, y, tool, pressure, velocity, metric,
       pointCount: n,
       radiusX: rx, radiusY: ry,
       radiusMag: Math.sqrt(rx * rx + ry * ry),
