@@ -206,16 +206,16 @@
     <span class="dbg-value" id="d-count">0</span>
   </div>
   <div class="dbg-block">
-    <span class="dbg-label">Área (kpx²)</span>
-    <span class="dbg-value" id="d-area">0.00</span>
-  </div>
-  <div class="dbg-block">
-    <span class="dbg-label">BBox W × H</span>
-    <span class="dbg-value" id="d-bbox">— × —</span>
+    <span class="dbg-label">Radio avg (px)</span>
+    <span class="dbg-value" id="d-radius-avg">0.00</span>
   </div>
   <div class="dbg-block">
     <span class="dbg-label">radiusX / Y</span>
     <span class="dbg-value" id="d-radius">— / —</span>
+  </div>
+  <div class="dbg-block">
+    <span class="dbg-label">BBox W × H</span>
+    <span class="dbg-value" id="d-bbox">— × —</span>
   </div>
   <div id="mode-indicator" class="mode-none">Ninguno</div>
   <button id="btn-clear">Limpiar</button>
@@ -229,7 +229,7 @@
   </div>
 
   <div id="sidebar" class="hidden">
-    <div class="sb-title">Umbrales <small style="color:#555">(kpx²)</small></div>
+    <div class="sb-title">Umbrales <small style="color:#555">(radio px)</small></div>
 
     <div id="cal-banner">Tocando pantalla para leer…</div>
 
@@ -293,7 +293,6 @@ resize();
 window.addEventListener('resize', resize);
 
 // ─── Defaults y umbrales ───────────────────────────────────────────────────
-const UNIT      = 1000;  // px² / UNIT → kpx²
 const TOLERANCE = 0.2;
 
 const DEFAULTS = {
@@ -345,11 +344,11 @@ const MODES = {
   eraser:   { label: 'Borrador',     cls: 'mode-eraser',   size: 60, color: null,      erase: true  },
 };
 
-function detectMode(areaPx) {
-  const a = areaPx / UNIT;
-  if (a >= thresholds.penThin.min  && a <= thresholds.penThin.max)  return 'penThin';
-  if (a >= thresholds.penThick.min && a <= thresholds.penThick.max) return 'penThick';
-  if (a >= thresholds.eraser.min   && a <= thresholds.eraser.max)   return 'eraser';
+// radio = promedio de (radiusX + radiusY)/2 de todos los touches activos
+function detectMode(radio) {
+  if (radio >= thresholds.penThin.min  && radio <= thresholds.penThin.max)  return 'penThin';
+  if (radio >= thresholds.penThick.min && radio <= thresholds.penThick.max) return 'penThick';
+  if (radio >= thresholds.eraser.min   && radio <= thresholds.eraser.max)   return 'eraser';
   return 'none';
 }
 
@@ -367,35 +366,41 @@ function getBBox(touches) {
   return { minX, minY, w, h, area: w * h };  // 0 para punto único → 0 kpx²
 }
 
-function avgRadius(touches) {
-  let rx = 0, ry = 0;
-  for (const t of touches) { rx += t.radiusX || 0; ry += t.radiusY || 0; }
-  return { rx: rx / touches.length, ry: ry / touches.length };
+// Promedio de (radiusX + radiusY)/2 de todos los touches → un solo escalar
+function calcRadio(touches) {
+  if (!touches.length) return 0;
+  let sum = 0;
+  for (const t of touches) sum += ((t.radiusX || 0) + (t.radiusY || 0)) / 2;
+  return sum / touches.length;
 }
 
 // ─── Debug bar ─────────────────────────────────────────────────────────────
 function updateDebug(touches) {
-  const bbox   = getBBox(touches);
-  const areaPx = bbox ? bbox.area : 0;
-  const mode   = detectMode(areaPx);
-  const m      = MODES[mode];
-  const { rx, ry } = touches.length ? avgRadius(touches) : { rx: 0, ry: 0 };
+  const bbox  = getBBox(touches);
+  const radio = calcRadio(touches);
+  const mode  = detectMode(radio);
+  const m     = MODES[mode];
 
-  document.getElementById('d-count').textContent = touches.length;
-  document.getElementById('d-area').textContent  = (areaPx / UNIT).toFixed(2);
-  document.getElementById('d-bbox').textContent  = bbox
-    ? `${Math.round(bbox.w)} × ${Math.round(bbox.h)}`
-    : '— × —';
-  document.getElementById('d-radius').textContent = touches.length
+  // radiusX / radiusY del primer touch (referencia)
+  const t0 = touches.length ? touches[0] : null;
+  const rx = t0 ? (t0.radiusX || 0) : 0;
+  const ry = t0 ? (t0.radiusY || 0) : 0;
+
+  document.getElementById('d-count').textContent      = touches.length;
+  document.getElementById('d-radius-avg').textContent = radio.toFixed(2);
+  document.getElementById('d-radius').textContent     = touches.length
     ? `${rx.toFixed(1)} / ${ry.toFixed(1)}`
     : '— / —';
+  document.getElementById('d-bbox').textContent = bbox
+    ? `${Math.round(bbox.w)} × ${Math.round(bbox.h)}`
+    : '— × —';
 
   const mi = document.getElementById('mode-indicator');
   mi.textContent = m.label;
   mi.className   = m.cls;
 
   drawOverlay(touches, bbox, mode);
-  return { mode, areaPx };
+  return { mode, radio };
 }
 
 // ─── Debug canvas overlay ──────────────────────────────────────────────────
@@ -433,7 +438,7 @@ function drawOverlay(touches, bbox, mode) {
     bctx.fillStyle = '#fff';
     bctx.font = '11px monospace';
     bctx.fillText(
-      `${Math.round(bbox.w)}×${Math.round(bbox.h)} = ${(bbox.area / UNIT).toFixed(2)} kpx²`,
+      `${Math.round(bbox.w)}×${Math.round(bbox.h)} px`,
       bbox.minX + 3, bbox.minY - 4
     );
   }
@@ -528,18 +533,17 @@ function cleanupCal(tool) {
   });
 }
 
-// Registra una lectura de área durante calibración
-function recordArea(areaPx) {
-  const a = areaPx / UNIT;
-  if (calMin > a) calMin = a;
-  if (calMax < a) calMax = a;
+// Registra una lectura de radio durante calibración
+function recordRadio(radio) {
+  if (calMin > radio) calMin = radio;
+  if (calMax < radio) calMax = radio;
   calCount++;
 
   const liveEl = document.getElementById('live-' + calState);
   liveEl.textContent =
-    `actual: ${a.toFixed(2)}\nmin: ${calMin.toFixed(2)}  max: ${calMax.toFixed(2)}\n(${calCount} lecturas)`;
+    `actual: ${radio.toFixed(2)}\nmin: ${calMin.toFixed(2)}  max: ${calMax.toFixed(2)}\n(${calCount} lecturas)`;
 
-  // Actualiza inputs en tiempo real con rango sin guardar aún
+  // Actualiza inputs en tiempo real con rango + tolerancia
   document.getElementById('min-' + calState).value = Math.max(0, calMin - TOLERANCE).toFixed(2);
   document.getElementById('max-' + calState).value = (calMax + TOLERANCE).toFixed(2);
 }
@@ -561,11 +565,10 @@ document.querySelectorAll('.btn-read').forEach(btn => {
 
 dc.addEventListener('touchstart', e => {
   e.preventDefault();
-  const { mode, areaPx } = updateDebug(e.touches);
+  const { mode, radio } = updateDebug(e.touches);
 
   if (calState) {
-    // En modo calibración: solo registrar área, no dibujar
-    if (e.touches.length > 0) recordArea(areaPx);
+    if (e.touches.length > 0) recordRadio(radio);
     return;
   }
 
@@ -576,10 +579,10 @@ dc.addEventListener('touchstart', e => {
 
 dc.addEventListener('touchmove', e => {
   e.preventDefault();
-  const { mode, areaPx } = updateDebug(e.touches);
+  const { mode, radio } = updateDebug(e.touches);
 
   if (calState) {
-    if (e.touches.length > 0) recordArea(areaPx);
+    if (e.touches.length > 0) recordRadio(radio);
     return;
   }
 
