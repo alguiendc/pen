@@ -4,7 +4,7 @@
  * evt = { x, y, tool, pressure, metric, pointCount }
  * tool = 'penThin' | 'penThick' | 'eraser' | 'none'
  */
-export const VERSION = '0.4';
+export const VERSION = '0.5';
 
 const DEFAULTS = {
   penThin:  { min: 0,    max: 1.2 },
@@ -58,10 +58,17 @@ export class PenDetector {
     const metric = rSum / ts.length;
     const rect   = this._el.getBoundingClientRect();
 
-    // Lock tool at stroke start — tilt/speed changes during stroke won't
-    // cause tool switching. Unlocked again on touchend.
-    if (e.type === 'touchstart') this._strokeTool = this._classify(metric);
-    const tool = this._strokeTool;
+    // Lock tool ONLY on the very first contact of the stroke.
+    // Tilt adds new touch points → fires more touchstart events → must NOT re-classify.
+    if (e.type === 'touchstart' && this._strokeTool === null) {
+      this._strokeTool = this._classify(metric);
+    }
+    const tool = this._strokeTool || 'none';
+
+    // radiusX/Y of first touch + magnitude for tilt monitoring
+    const t0  = ts[0];
+    const rx  = t0.radiusX || 0;
+    const ry  = t0.radiusY || 0;
 
     this._emit(e.type === 'touchstart' ? 'pendown' : 'penmove', {
       x:          cx / ts.length - rect.left,
@@ -70,6 +77,9 @@ export class PenDetector {
       pressure:   this._pressure(metric, tool),
       metric,
       pointCount: ts.length,
+      radiusX:    rx,
+      radiusY:    ry,
+      radiusMag:  Math.sqrt(rx * rx + ry * ry),
     });
   }
 

@@ -78,10 +78,10 @@
     <button id="btn-ink">Ink</button>
   </div>
   <div id="tool">Ninguno</div>
-  <div id="dbg">pts:— · metric:— · pressure:—</div>
+  <div id="dbg">pts:— · metric:— · rX:— · rY:— · √(rX²+rY²):—</div>
   <button class="plain" id="btn-clr">Limpiar</button>
   <button class="plain" id="btn-cfg">⚙ Calibrar</button>
-  <span style="margin-left:auto;font-size:10px;color:#444">v0.4</span>
+  <span style="margin-left:auto;font-size:10px;color:#444">v0.5</span>
 </div>
 
 <div id="wrap">
@@ -201,8 +201,11 @@ function setDebug(e) {
   const tb = document.getElementById('tool');
   tb.textContent = e.tool;
   tb.className   = 't-' + e.tool;
+  const rx  = (e.radiusX  ?? 0).toFixed(2);
+  const ry  = (e.radiusY  ?? 0).toFixed(2);
+  const mag = (e.radiusMag ?? 0).toFixed(2);
   document.getElementById('dbg').textContent =
-    `pts:${e.pointCount} · metric:${e.metric.toFixed(2)} · pressure:${e.pressure.toFixed(2)}`;
+    `pts:${e.pointCount} · metric:${e.metric.toFixed(2)} · rX:${rx} · rY:${ry} · √(rX²+rY²):${mag}`;
 }
 function clearDebug() {
   const tb = document.getElementById('tool');
