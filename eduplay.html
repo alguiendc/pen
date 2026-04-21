@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>EduPlay</title>
+  <style>
+    :root {
+      --bg:       #0f0f23; --surface: #1a1a35; --primary: #4a90e2;
+      --correct:  #4caf50; --correct-bg: rgba(76,175,80,.15);
+      --wrong:    #f44336; --wrong-bg:   rgba(244,67,54,.15);
+      --text:     #fff;    --muted: rgba(255,255,255,.55);
+      --card:     rgba(255,255,255,.07); --card-h: rgba(255,255,255,.14);
+      --border:   rgba(255,255,255,.1);
+      --r-btn: 16px; --r-card: 20px;
+      --t: 200ms ease;
+    }
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+    html, body { height:100%; overflow:hidden; }
+    body { font-family:'Segoe UI',system-ui,sans-serif; font-size:clamp(1rem,1.8vw,1.4rem);
+           color:var(--text); background:var(--bg); touch-action:manipulation; }
+    button { font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+    .hidden { display:none !important; }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    #app { width:100vw; height:100vh; display:flex; }
+    #player { width:100%; display:grid; grid-template-rows:auto 1fr auto; }
+
+    #hud, #controls {
+      display:flex; align-items:center; padding:.75rem 2rem;
+      background:rgba(0,0,0,.35); border:1px solid var(--border);
+      min-height:68px; z-index:10; gap:1rem;
+    }
+    #hud { justify-content:space-between; border-bottom-width:1px; }
+    #controls { justify-content:center; border-top-width:1px; }
+
+    #main { display:flex; align-items:center; justify-content:center;
+            padding:2rem; position:relative; overflow:hidden; }
+
+    /* ── HUD ────────────────────────────────────────────────── */
+    .hud-title { font-size:.95rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hud-timer { font-size:clamp(1.5rem,2.8vw,2.4rem); font-weight:700; font-variant-numeric:tabular-nums; }
+    .hud-timer.warn { color:var(--wrong); animation:pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .hud-score { text-align:right; }
+    .hud-score span:first-child { font-size:.8rem; color:var(--muted); display:block; }
+    .hud-score span:last-child  { font-size:clamp(1.5rem,2.8vw,2.4rem); font-weight:700; }
+
+    /* ── Controls ───────────────────────────────────────────── */
+    .ctrl { width:52px; height:52px; border-radius:50%; font-size:1.3rem;
+            background:var(--card); border:1px solid var(--border); transition:background var(--t); }
+    .ctrl:hover { background:var(--card-h); }
+    .ctrl.primary { background:var(--primary); border-color:transparent; width:64px; height:64px; font-size:1.7rem; }
+    .ctrl.primary:hover { filter:brightness(1.15); }
+
+    /* ── Start ──────────────────────────────────────────────── */
+    .start { display:flex; align-items:center; justify-content:center; width:100%; height:100%; }
+    .start-inner { text-align:center; max-width:820px; padding:3rem; }
+    .badge { display:inline-block; background:var(--primary); color:#fff; padding:.3rem 1rem;
+             border-radius:999px; font-size:.8rem; font-weight:700; letter-spacing:.1em;
+             text-transform:uppercase; margin-bottom:1rem; }
+    .start-title { font-size:clamp(2rem,4.5vw,4rem); font-weight:800; margin-bottom:.5rem; }
+    .start-sub   { font-size:clamp(1.1rem,2vw,1.6rem); color:var(--muted); margin-bottom:2rem; }
+    .start-meta  { color:var(--muted); margin-bottom:2.5rem; display:flex; gap:2rem; justify-content:center; }
+    .btn-start { display:inline-flex; align-items:center; gap:.75rem; background:var(--primary);
+                 color:#fff; font-size:clamp(1.1rem,2vw,1.6rem); font-weight:700;
+                 padding:1rem 2.5rem; border-radius:var(--r-btn); min-width:260px;
+                 box-shadow:0 8px 32px rgba(74,144,226,.35); transition:filter var(--t),transform var(--t); }
+    .btn-start:hover { filter:brightness(1.1); transform:translateY(-2px); }
+
+    /* ── Quiz ───────────────────────────────────────────────── */
+    .quiz { width:100%; max-width:1100px; display:flex; flex-direction:column; gap:1.5rem; }
+    .quiz-q { background:var(--card); border:1px solid var(--border); border-radius:var(--r-card);
+              padding:1.5rem 2rem; text-align:center; }
+    .quiz-q p { font-size:clamp(1.2rem,2.2vw,1.9rem); font-weight:700; line-height:1.3; }
+    .quiz-opts { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+
+    .quiz-opt {
+      display:flex; align-items:center; gap:1rem; background:var(--card);
+      border:2px solid var(--border); border-radius:var(--r-btn);
+      padding:1rem 1.5rem; font-size:clamp(1rem,1.8vw,1.5rem); font-weight:600;
+      min-height:84px; cursor:pointer; text-align:left;
+      transition:background var(--t), border-color var(--t), transform var(--t);
+    }
+    .quiz-opt:not(:disabled):hover { background:var(--card-h); border-color:var(--primary); transform:translateY(-2px); }
+    .quiz-opt.correct { background:var(--correct-bg); border-color:var(--correct); animation:pop .4s ease; }
+    .quiz-opt.wrong   { background:var(--wrong-bg);   border-color:var(--wrong);   animation:shake .4s ease; }
+    .quiz-opt:disabled { cursor:default; }
+    .opt-ltr {
+      width:42px; height:42px; border-radius:50%; background:var(--border); flex-shrink:0;
+      display:flex; align-items:center; justify-content:center; font-weight:800;
+    }
+    .quiz-opt.correct .opt-ltr { background:var(--correct); }
+    .quiz-opt.wrong   .opt-ltr { background:var(--wrong); }
+    @keyframes pop   { 0%{transform:scale(1)} 40%{transform:scale(1.04)} 100%{transform:scale(1)} }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-10px)} 75%{transform:translateX(10px)} }
+
+    /* ── End ────────────────────────────────────────────────── */
+    .end { display:flex; align-items:center; justify-content:center; width:100%; height:100%; }
+    .end-inner { text-align:center; max-width:680px; padding:3rem; }
+    .end-emoji { font-size:5rem; margin-bottom:1rem; }
+    .end-title { font-size:clamp(1.8rem,4vw,3.5rem); font-weight:800; margin-bottom:1.5rem; }
+    .end-ring { width:160px; height:160px; border-radius:50%; border:8px solid var(--primary);
+                display:flex; flex-direction:column; align-items:center; justify-content:center;
+                margin:0 auto 1.5rem; box-shadow:0 0 40px rgba(74,144,226,.3); }
+    .end-pct   { font-size:clamp(2rem,4vw,3.5rem); font-weight:800; }
+    .end-stats { display:flex; gap:2.5rem; justify-content:center; margin-bottom:2rem; }
+    .end-stat  { display:flex; flex-direction:column; align-items:center; gap:4px; }
+    .end-stat span:first-child { font-size:clamp(1.3rem,2.5vw,2rem); font-weight:700; }
+    .end-stat span:last-child  { font-size:.85rem; color:var(--muted); }
+    .btn-restart { display:inline-flex; align-items:center; gap:.75rem; background:var(--card);
+                   border:2px solid var(--border); font-size:clamp(1rem,1.6vw,1.4rem);
+                   font-weight:600; padding:1rem 2.5rem; border-radius:var(--r-btn);
+                   transition:background var(--t), border-color var(--t); }
+    .btn-restart:hover { background:var(--card-h); border-color:var(--primary); }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="player">
+    <div id="hud"></div>
+    <div id="main"></div>
+    <div id="controls"></div>
+  </div>
+</div>
+
+<script>
+// ── Activities ────────────────────────────────────────────────────────────
+const activities = [
+  {
+    id:'act-1', title:'Vocabulario: Animales', subtitle:'Nivel A1 · Español',
+    timer:60, items:[
+      { q:'¿Cómo se dice "dog"?',              a:'perro',   opts:['gato','perro','pez','pájaro'] },
+      { q:'¿Cómo se dice "cat"?',              a:'gato',    opts:['perro','gato','ratón','caballo'] },
+      { q:'¿Qué animal hace "mu"?',            a:'vaca',    opts:['oveja','cerdo','vaca','gallina'] },
+      { q:'¿Qué animal vive en el mar?',       a:'pez',     opts:['pez','perro','gato','pájaro'] },
+      { q:'¿Cuál puede volar?',                a:'pájaro',  opts:['perro','pájaro','vaca','pez'] },
+    ]
+  },
+  {
+    id:'act-2', title:'Sumas Básicas', subtitle:'1.º Primaria',
+    timer:90, items:[
+      { q:'¿Cuánto es 5 + 3?',  a:'8',  opts:['6','7','8','9'] },
+      { q:'¿Cuánto es 4 + 6?',  a:'10', opts:['8','9','10','11'] },
+      { q:'¿Cuánto es 7 + 2?',  a:'9',  opts:['8','9','10','11'] },
+      { q:'¿Cuánto es 3 + 3?',  a:'6',  opts:['5','6','7','8'] },
+    ]
+  },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────
+const App = {
+  act:      null,
+  idx:      0,
+  score:    0,
+  timeLeft: 0,
+  timeUsed: 0,
+  answered: false,
+  _timer:   null,
+
+  load(act) {
+    this.act = act; this.idx = 0; this.score = 0;
+    this.timeLeft = act.timer; this.timeUsed = 0;
+    this._renderHUD();
+    this._renderControls();
+    this._showStart();
+  },
+
+  start() {
+    this.idx = 0; this.score = 0; this.timeLeft = this.act.timer; this.timeUsed = 0;
+    this._updateScore(); this._updateTimer();
+    this._renderQuestion();
+    this._startTimer();
+  },
+
+  answer(value) {
+    if (this.answered) return;
+    this.answered = true;
+    const item = this.act.items[this.idx];
+    const ok = value === item.a;
+    if (ok) { this.score += 10; this._updateScore(); }
+
+    document.querySelectorAll('.quiz-opt').forEach(b => {
+      if (b.dataset.v === item.a)  b.classList.add('correct');
+      else if (b.dataset.v === value) b.classList.add('wrong');
+      b.disabled = true;
+    });
+
+    setTimeout(() => {
+      this.idx++;
+      if (this.idx < this.act.items.length) this._renderQuestion();
+      else this._end();
+    }, 1500);
+  },
+
+  _renderQuestion() {
+    this.answered = false;
+    const item = this.act.items[this.idx];
+    const opts = [...item.opts].sort(() => Math.random() - .5);
+    document.getElementById('main').innerHTML = `
+      <div class="quiz">
+        <div style="text-align:right;font-size:.85rem;color:var(--muted)">${this.idx+1}/${this.act.items.length}</div>
+        <div class="quiz-q"><p>${esc(item.q)}</p></div>
+        <div class="quiz-opts">
+          ${opts.map((o,i) => `
+            <button class="quiz-opt" data-v="${esc(o)}">
+              <span class="opt-ltr">${'ABCD'[i]}</span>
+              <span>${esc(o)}</span>
+            </button>`).join('')}
+        </div>
+      </div>`;
+    // click works for mouse, finger AND pen (dispatched by PenDetector handler below)
+    document.querySelectorAll('.quiz-opt').forEach(b =>
+      b.addEventListener('click', () => this.answer(b.dataset.v)));
+  },
+
+  _showStart() {
+    clearInterval(this._timer);
+    document.getElementById('main').innerHTML = `
+      <div class="start"><div class="start-inner">
+        <div class="badge">Actividad</div>
+        <h1 class="start-title">${esc(this.act.title)}</h1>
+        <p class="start-sub">${esc(this.act.subtitle)}</p>
+        <div class="start-meta"><span>${this.act.items.length} preguntas</span><span>${this.act.timer}s</span></div>
+        <button class="btn-start" id="btn-start">▶ Comenzar</button>
+      </div></div>`;
+    document.getElementById('btn-start').addEventListener('click', () => this.start());
+  },
+
+  _end() {
+    clearInterval(this._timer);
+    const max = this.act.items.length * 10;
+    const pct = Math.round(this.score / max * 100);
+    const emoji = pct >= 80 ? '🎉' : pct >= 50 ? '👍' : '💪';
+    const msg   = pct >= 80 ? '¡Excelente!' : pct >= 50 ? '¡Bien hecho!' : '¡Sigue practicando!';
+    document.getElementById('main').innerHTML = `
+      <div class="end"><div class="end-inner">
+        <div class="end-emoji">${emoji}</div>
+        <h1 class="end-title">${msg}</h1>
+        <div class="end-ring"><span class="end-pct">${pct}%</span><span style="font-size:.8rem;color:var(--muted)">Puntuación</span></div>
+        <div class="end-stats">
+          <div class="end-stat"><span>${this.score}</span><span>Puntos</span></div>
+          <div class="end-stat"><span>${this.act.items.length}</span><span>Preguntas</span></div>
+          <div class="end-stat"><span>${this.timeUsed}s</span><span>Tiempo</span></div>
+        </div>
+        <button class="btn-restart" id="btn-restart">↺ Jugar de nuevo</button>
+      </div></div>`;
+    document.getElementById('btn-restart').addEventListener('click', () => this.load(this.act));
+  },
+
+  _renderHUD() {
+    document.getElementById('hud').innerHTML = `
+      <span class="hud-title">${esc(this.act.title)}</span>
+      <div class="hud-timer" id="hud-timer">⏱ <span id="t-val">--</span></div>
+      <div class="hud-score"><span>Puntos</span><span id="score-val">0</span></div>`;
+  },
+
+  _renderControls() {
+    document.getElementById('controls').innerHTML = `
+      <button class="ctrl" id="c-reset" title="Reiniciar">↺</button>
+      <button class="ctrl primary" id="c-pp" title="Pausar">⏸</button>
+      <button class="ctrl" id="c-next" title="Finalizar">⏭</button>`;
+    document.getElementById('c-reset').addEventListener('click', () => this.load(this.act));
+    document.getElementById('c-next' ).addEventListener('click', () => this._end());
+    document.getElementById('c-pp'   ).addEventListener('click', () => {
+      if (this._timer) { clearInterval(this._timer); this._timer = null; document.getElementById('c-pp').textContent='▶'; }
+      else             { this._startTimer(); document.getElementById('c-pp').textContent='⏸'; }
+    });
+  },
+
+  _startTimer() {
+    clearInterval(this._timer);
+    this._timer = setInterval(() => {
+      this.timeLeft--; this.timeUsed++;
+      this._updateTimer();
+      if (this.timeLeft <= 0) { clearInterval(this._timer); this._end(); }
+    }, 1000);
+  },
+
+  _updateTimer() {
+    const el = document.getElementById('t-val');
+    if (el) { el.textContent = this.timeLeft; el.parentElement.classList.toggle('warn', this.timeLeft <= 10); }
+  },
+  _updateScore() {
+    const el = document.getElementById('score-val'); if (el) el.textContent = this.score;
+  },
+};
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+App.load(activities[0]);
+</script>
+
+<!-- ── Pen detection (IR) ───────────────────────────────────────────────── -->
+<script type="module">
+import { PenDetector } from './pen-detector.js';
+
+const main = document.getElementById('main');
+
+// Transparent canvas overlay — captures pen touches, lets mouse/finger
+// reach the buttons underneath via elementsFromPoint + click dispatch
+const cvs = document.createElement('canvas');
+cvs.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:10;touch-action:none;';
+main.appendChild(cvs);
+
+new ResizeObserver(() => {
+  const dpr = devicePixelRatio || 1;
+  cvs.width  = main.clientWidth  * dpr;
+  cvs.height = main.clientHeight * dpr;
+  cvs.style.width  = main.clientWidth  + 'px';
+  cvs.style.height = main.clientHeight + 'px';
+}).observe(main);
+
+const det = new PenDetector({ element: cvs });
+
+det.on('pendown', e => {
+  if (e.tool === 'none' || e.tool === 'eraser') return;
+
+  // Find the interactive element the pen touched in any layer below the canvas
+  const rect = main.getBoundingClientRect();
+  const hit  = document.elementsFromPoint(rect.left + e.x, rect.top + e.y)
+    .find(el => el.matches?.('.quiz-opt:not([disabled]), .btn-start, .btn-restart'));
+
+  if (hit) hit.click();
+});
+</script>
+</body>
+</html>
