@@ -20,6 +20,7 @@ export class PenDetector {
     this._ev     = {};
     this._active = new Set(); // ink pointer ids
     this._b      = {};
+    this._strokeTool = null; // locked tool for current stroke
 
     this._el.style.touchAction = 'none';
     mode === 'ir' ? this._initIR() : this._initInk();
@@ -35,7 +36,7 @@ export class PenDetector {
     const o = { passive: false };
     this._b.ts = e => { e.preventDefault(); this._irHandle(e); };
     this._b.tm = e => { e.preventDefault(); this._irHandle(e); };
-    this._b.te = e => { e.preventDefault(); if (!e.touches.length) this._emit('penup', {}); };
+    this._b.te = e => { e.preventDefault(); if (!e.touches.length) { this._strokeTool = null; this._emit('penup', {}); } };
     this._el.addEventListener('touchstart',  this._b.ts, o);
     this._el.addEventListener('touchmove',   this._b.tm, o);
     this._el.addEventListener('touchend',    this._b.te, o);
@@ -55,7 +56,11 @@ export class PenDetector {
     }
     const metric = rSum / ts.length;
     const rect   = this._el.getBoundingClientRect();
-    const tool   = this._classify(metric);
+
+    // Lock tool at stroke start — tilt/speed changes during stroke won't
+    // cause tool switching. Unlocked again on touchend.
+    if (e.type === 'touchstart') this._strokeTool = this._classify(metric);
+    const tool = this._strokeTool;
 
     this._emit(e.type === 'touchstart' ? 'pendown' : 'penmove', {
       x:          cx / ts.length - rect.left,
@@ -79,13 +84,14 @@ export class PenDetector {
   }
 
   _inkBuild(e) {
-    const rect   = this._el.getBoundingClientRect();
-    const isErase = (e.buttons & 32) !== 0;
-    const p      = e.pressure || 0;
-    const tool   = isErase ? 'eraser' : p > 0.45 ? 'penThick' : 'penThin';
+    const rect = this._el.getBoundingClientRect();
+    const p    = e.pressure || 0;
     return {
       x: e.clientX - rect.left, y: e.clientY - rect.top,
-      tool, pressure: p, metric: p, pointCount: 1,
+      tool:       this._strokeTool,
+      pressure:   p,
+      metric:     p,
+      pointCount: 1,
     };
   }
 
@@ -94,6 +100,10 @@ export class PenDetector {
     e.preventDefault();
     this._el.setPointerCapture(e.pointerId);
     this._active.add(e.pointerId);
+    // Lock tool at stroke start
+    const isErase = (e.buttons & 32) !== 0;
+    const p = e.pressure || 0;
+    this._strokeTool = isErase ? 'eraser' : p > 0.45 ? 'penThick' : 'penThin';
     this._emit('pendown', this._inkBuild(e));
   }
 
@@ -106,7 +116,7 @@ export class PenDetector {
   _inkUp(e) {
     if (e.pointerType !== 'pen') return;
     this._active.delete(e.pointerId);
-    if (!this._active.size) this._emit('penup', {});
+    if (!this._active.size) { this._strokeTool = null; this._emit('penup', {}); }
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────
