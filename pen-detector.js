@@ -1,31 +1,43 @@
 /**
- * pen-detector.js v0.8
+ * pen-detector.js v1.0
  * Events: pendown(evt), penmove(evt), penup()
- * evt = { x, y, tool, pressure, metric, pointCount }
+ * evt = { x, y, tool, pressure, velocity, metric, pointCount, radiusX, radiusY, radiusMag, bboxW, bboxH, bboxArea }
  * tool = 'penThin' | 'penThick' | 'eraser' | 'none'
- * IR pressure estimated from stroke velocity (slow = high pressure).
+ *
+ * Options:
+ *   element   — required DOM element
+ *   mode      — 'ir' (Touch Events) | 'ink' (Pointer Events)
+ *   thresholds — override default IR ranges
+ *   smooth    — { xy: 0..1, pressure: 0..1 }  0=raw, 1=max smooth (default: xy=0.2, pressure=0.6)
  */
-export const VERSION = '0.9';
+export const VERSION = '1.0';
 
 const DEFAULTS = {
   penThin:  { min: 0,   max: 1.2 },
   penThick: { min: 1.2, max: 2.5 },
   eraser:   { min: 10,  max: 30  },
-  // 2.5–10 = finger touch → classified 'none', not drawn
+  // 2.5–10 = finger touch → 'none', not drawn
 };
 
 export class PenDetector {
-  constructor({ element, mode = 'ir', thresholds } = {}) {
+  constructor({ element, mode = 'ir', thresholds, smooth = {} } = {}) {
     if (!element) throw new Error('PenDetector: element required');
-    this._el     = element;
-    this._mode   = mode;
-    this._thr    = Object.assign({}, DEFAULTS, thresholds);
-    this._ev     = {};
-    this._active = new Set();
-    this._b      = {};
+    this._el   = element;
+    this._mode = mode;
+    this._thr  = Object.assign({}, DEFAULTS, thresholds);
+    this._ev   = {};
+    this._active     = new Set();
+    this._b          = {};
     this._strokeTool = null;
-    this._velPos     = null; // { x, y, t } for velocity pressure
-    this._velP       = 0.5;  // smoothed pressure
+
+    // Smoothing coefficients  (weight of the OLD value, 0=raw, 1=frozen)
+    this._smXY = Math.max(0, Math.min(0.95, smooth.xy       ?? 0.2));
+    this._smP  = Math.max(0, Math.min(0.95, smooth.pressure ?? 0.6));
+
+    // EMA state (reset each stroke)
+    this._sPos  = null;   // { x, y }
+    this._velPos = null;  // { x, y, t }
+    this._sP    = 0.5;   // smoothed pressure
 
     this._el.style.touchAction = 'none';
     mode === 'ir' ? this._initIR() : this._initInk();
@@ -45,7 +57,7 @@ export class PenDetector {
       e.preventDefault();
       if (!e.touches.length) {
         this._strokeTool = null;
-        this._velPos = null; this._velP = 0.5;
+        this._sPos = null; this._velPos = null; this._sP = 0.5;
         this._emit('penup', {});
       }
     };
@@ -69,47 +81,33 @@ export class PenDetector {
       if (x < minX) minX = x; if (x > maxX) maxX = x;
       if (y < minY) minY = y; if (y > maxY) maxY = y;
     }
-    const n        = ts.length;
-    const bboxW    = maxX - minX;
-    const bboxH    = maxY - minY;
-    const bboxArea = bboxW * bboxH;
+    const n         = ts.length;
+    const bboxW     = maxX - minX;
+    const bboxH     = maxY - minY;
+    const bboxArea  = bboxW * bboxH;
     const avgRadius = rSum / n;
-    const metric   = avgRadius;
+    const metric    = avgRadius;
     const t0 = ts[0];
     const rx = t0.radiusX || 0, ry = t0.radiusY || 0;
-    const x  = cx / n, y = cy / n;
+
+    const rawX = cx / n, rawY = cy / n;
 
     if (e.type === 'touchstart' && this._strokeTool === null) {
       this._strokeTool = this._classify(metric);
-      this._velPos = null; this._velP = 0.5;
+      this._sPos = null; this._velPos = null; this._sP = 0.5;
     }
     const tool = this._strokeTool || 'none';
 
+    const { x, y } = this._smoothXY(rawX, rawY);
+    const { pressure, velocity } = this._velPressure(rawX, rawY);
+
     this._emit(e.type === 'touchstart' ? 'pendown' : 'penmove', {
-      x, y, tool,
-      pressure:   this._velPressure(x, y),
-      metric,
+      x, y, tool, pressure, velocity, metric,
       pointCount: n,
-      radiusX:    rx,
-      radiusY:    ry,
-      radiusMag:  Math.sqrt(rx * rx + ry * ry),
+      radiusX: rx, radiusY: ry,
+      radiusMag: Math.sqrt(rx * rx + ry * ry),
       bboxW, bboxH, bboxArea,
     });
-  }
-
-  // Velocity-based pressure: slow stroke → high pressure, fast → low.
-  // Max speed ≈ 3 px/ms feels natural; below 0.1 px/ms = full pressure.
-  _velPressure(x, y) {
-    const now = Date.now();
-    if (this._velPos) {
-      const dx = x - this._velPos.x, dy = y - this._velPos.y;
-      const dt = Math.max(1, now - this._velPos.t);
-      const speed = Math.sqrt(dx * dx + dy * dy) / dt; // px/ms
-      const raw = 1 - Math.min(1, speed / 3);
-      this._velP = this._velP * 0.6 + raw * 0.4;       // EMA smooth
-    }
-    this._velPos = { x, y, t: now };
-    return this._velP;
   }
 
   // ── Ink (Pointer Events) ─────────────────────────────────────────────────
@@ -125,14 +123,11 @@ export class PenDetector {
 
   _inkBuild(e) {
     const rect = this._el.getBoundingClientRect();
-    const p    = e.pressure || 0;
-    return {
-      x: e.clientX - rect.left, y: e.clientY - rect.top,
-      tool:       this._strokeTool,
-      pressure:   p,
-      metric:     p,
-      pointCount: 1,
-    };
+    const rawX = e.clientX - rect.left, rawY = e.clientY - rect.top;
+    const { x, y } = this._smoothXY(rawX, rawY);
+    const rawP = e.pressure || 0;
+    this._sP = this._smP * this._sP + (1 - this._smP) * rawP;
+    return { x, y, tool: this._strokeTool, pressure: this._sP, velocity: 0, metric: rawP, pointCount: 1 };
   }
 
   _inkDown(e) {
@@ -140,6 +135,7 @@ export class PenDetector {
     e.preventDefault();
     this._el.setPointerCapture(e.pointerId);
     this._active.add(e.pointerId);
+    this._sPos = null; this._sP = e.pressure || 0;
     const isErase = (e.buttons & 32) !== 0;
     const p = e.pressure || 0;
     this._strokeTool = isErase ? 'eraser' : p > 0.45 ? 'penThick' : 'penThin';
@@ -155,10 +151,40 @@ export class PenDetector {
   _inkUp(e) {
     if (e.pointerType !== 'pen') return;
     this._active.delete(e.pointerId);
-    if (!this._active.size) { this._strokeTool = null; this._emit('penup', {}); }
+    if (!this._active.size) {
+      this._strokeTool = null;
+      this._sPos = null; this._sP = 0.5;
+      this._emit('penup', {});
+    }
   }
 
-  // ── helpers ──────────────────────────────────────────────────────────────
+  // ── smoothing helpers ────────────────────────────────────────────────────
+  _smoothXY(x, y) {
+    if (this._smXY === 0 || !this._sPos) {
+      this._sPos = { x, y };
+      return { x, y };
+    }
+    this._sPos.x = this._smXY * this._sPos.x + (1 - this._smXY) * x;
+    this._sPos.y = this._smXY * this._sPos.y + (1 - this._smXY) * y;
+    return { x: this._sPos.x, y: this._sPos.y };
+  }
+
+  // Velocity-based pressure: slow stroke = high pressure. Returns smoothed value.
+  _velPressure(x, y) {
+    const now = Date.now();
+    let velocity = 0;
+    if (this._velPos) {
+      const dx = x - this._velPos.x, dy = y - this._velPos.y;
+      const dt = Math.max(1, now - this._velPos.t);
+      velocity = Math.sqrt(dx * dx + dy * dy) / dt; // px/ms
+      const raw = 1 - Math.min(1, velocity / 3);
+      this._sP = this._smP * this._sP + (1 - this._smP) * raw;
+    }
+    this._velPos = { x, y, t: now };
+    return { pressure: this._sP, velocity };
+  }
+
+  // ── classification ───────────────────────────────────────────────────────
   _classify(m) {
     const t = this._thr;
     if (m >= t.penThin.min  && m <= t.penThin.max)  return 'penThin';
@@ -172,6 +198,13 @@ export class PenDetector {
   get mode()       { return this._mode; }
 
   setThresholds(thr) { Object.assign(this._thr, thr); return this; }
+
+  /** Change smoothing at runtime. xy/pressure each 0 (raw) – 1 (max smooth). */
+  setSmooth({ xy, pressure } = {}) {
+    if (xy       !== undefined) this._smXY = Math.max(0, Math.min(0.95, xy));
+    if (pressure !== undefined) this._smP  = Math.max(0, Math.min(0.95, pressure));
+    return this;
+  }
 
   destroy() {
     const el = this._el;

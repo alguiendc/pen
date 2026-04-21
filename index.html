@@ -100,8 +100,18 @@
     ×rad <input type="number" id="rad-mult" value="8" min="1" max="200" step="1"
       style="width:50px;background:#0a1525;border:1px solid #1a3a5a;color:#4cc9f0;font-family:monospace;font-size:13px;padding:2px 5px;border-radius:4px">
   </label>
+  <label id="mult-wrap" style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;white-space:nowrap">
+    sm-xy <input type="range" id="sm-xy" min="0" max="0.95" step="0.05" value="0.2"
+      style="width:60px;accent-color:#4cc9f0">
+    <span id="sm-xy-val" style="color:#4cc9f0;min-width:28px">0.2</span>
+  </label>
+  <label id="mult-wrap" style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;white-space:nowrap">
+    sm-P <input type="range" id="sm-p" min="0" max="0.95" step="0.05" value="0.6"
+      style="width:60px;accent-color:#f8961e">
+    <span id="sm-p-val" style="color:#f8961e;min-width:28px">0.6</span>
+  </label>
   <button class="plain" id="btn-cfg">⚙ Calibrar</button>
-  <span style="margin-left:auto;font-size:10px;color:#444">v1.0</span>
+  <span style="font-size:10px;color:#444">v1.1</span>
 </div>
 
 <div id="wrap">
@@ -181,6 +191,16 @@ window.addEventListener('resize', resize);
 // ── detector ──────────────────────────────────────────────────────────────
 let det = null, mode = 'ir', prev = null, radMult = 8;
 document.getElementById('rad-mult').addEventListener('input', e => { radMult = Math.max(1, +e.target.value || 1); });
+document.getElementById('sm-xy').addEventListener('input', e => {
+  const v = +e.target.value;
+  document.getElementById('sm-xy-val').textContent = v.toFixed(2);
+  if (det) det.setSmooth({ xy: v });
+});
+document.getElementById('sm-p').addEventListener('input', e => {
+  const v = +e.target.value;
+  document.getElementById('sm-p-val').textContent = v.toFixed(2);
+  if (det) det.setSmooth({ pressure: v });
+});
 
 const STYLE = {
   penThin:  { w: 2,  color: '#4cc9f0' },
@@ -191,7 +211,9 @@ const STYLE = {
 function start(m) {
   if (det) det.destroy();
   mode = m; prev = null;
-  det = new PenDetector({ element: dc, mode: m });
+  const smXY = +document.getElementById('sm-xy').value;
+  const smP  = +document.getElementById('sm-p').value;
+  det = new PenDetector({ element: dc, mode: m, smooth: { xy: smXY, pressure: smP } });
   det.on('pendown', e => { setDebug(e); prev = { x: e.x, y: e.y }; });
   det.on('penmove', e => { setDebug(e); if (prev) draw(prev, e); prev = { x: e.x, y: e.y }; });
   det.on('penup',   () => { prev = null; clearDebug(); });
