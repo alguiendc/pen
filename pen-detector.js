@@ -1,15 +1,17 @@
 /**
- * pen-detector.js v0.4 — minimal IR / Windows Ink detection
+ * pen-detector.js v0.8
  * Events: pendown(evt), penmove(evt), penup()
  * evt = { x, y, tool, pressure, metric, pointCount }
  * tool = 'penThin' | 'penThick' | 'eraser' | 'none'
+ * IR pressure estimated from stroke velocity (slow = high pressure).
  */
-export const VERSION = '0.7';
+export const VERSION = '0.8';
 
 const DEFAULTS = {
-  penThin:  { min: 0,    max: 1.2 },
-  penThick: { min: 1.4,  max: 2.8 },
-  eraser:   { min: 13,   max: 20  },
+  penThin:  { min: 0,   max: 1.2 },
+  penThick: { min: 1.2, max: 2.5 },
+  eraser:   { min: 10,  max: 30  },
+  // 2.5–10 = finger touch → classified 'none', not drawn
 };
 
 export class PenDetector {
@@ -19,25 +21,34 @@ export class PenDetector {
     this._mode   = mode;
     this._thr    = Object.assign({}, DEFAULTS, thresholds);
     this._ev     = {};
-    this._active = new Set(); // ink pointer ids
+    this._active = new Set();
     this._b      = {};
-    this._strokeTool = null; // locked tool for current stroke
+    this._strokeTool = null;
+    this._velPos     = null; // { x, y, t } for velocity pressure
+    this._velP       = 0.5;  // smoothed pressure
 
     this._el.style.touchAction = 'none';
     mode === 'ir' ? this._initIR() : this._initInk();
   }
 
   // ── tiny event emitter ───────────────────────────────────────────────────
-  on(e, fn)      { (this._ev[e] = this._ev[e] || []).push(fn); return this; }
-  off(e, fn)     { if (this._ev[e]) this._ev[e] = this._ev[e].filter(h => h !== fn); return this; }
-  _emit(e, d)    { (this._ev[e] || []).slice().forEach(fn => fn(d)); }
+  on(e, fn)   { (this._ev[e] = this._ev[e] || []).push(fn); return this; }
+  off(e, fn)  { if (this._ev[e]) this._ev[e] = this._ev[e].filter(h => h !== fn); return this; }
+  _emit(e, d) { (this._ev[e] || []).slice().forEach(fn => fn(d)); }
 
   // ── IR (Touch Events) ────────────────────────────────────────────────────
   _initIR() {
     const o = { passive: false };
     this._b.ts = e => { e.preventDefault(); this._irHandle(e); };
     this._b.tm = e => { e.preventDefault(); this._irHandle(e); };
-    this._b.te = e => { e.preventDefault(); if (!e.touches.length) { this._strokeTool = null; this._emit('penup', {}); } };
+    this._b.te = e => {
+      e.preventDefault();
+      if (!e.touches.length) {
+        this._strokeTool = null;
+        this._velPos = null; this._velP = 0.5;
+        this._emit('penup', {});
+      }
+    };
     this._el.addEventListener('touchstart',  this._b.ts, o);
     this._el.addEventListener('touchmove',   this._b.tm, o);
     this._el.addEventListener('touchend',    this._b.te, o);
@@ -45,11 +56,10 @@ export class PenDetector {
   }
 
   _irHandle(e) {
-    const ts   = e.touches;
+    const ts = e.touches;
     if (!ts.length) return;
     const rect = this._el.getBoundingClientRect();
 
-    // Centroid + avg radius + bounding box — all in one pass
     let rSum = 0, cx = 0, cy = 0;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const t of ts) {
@@ -59,30 +69,25 @@ export class PenDetector {
       if (x < minX) minX = x; if (x > maxX) maxX = x;
       if (y < minY) minY = y; if (y > maxY) maxY = y;
     }
-    const n       = ts.length;
-    const bboxW   = maxX - minX;
-    const bboxH   = maxY - minY;
-    const bboxArea = bboxW * bboxH;          // px² — spread of all contacts
-    const avgRadius = rSum / n;              // avg (rX+rY)/2 per touch point
+    const n        = ts.length;
+    const bboxW    = maxX - minX;
+    const bboxH    = maxY - minY;
+    const bboxArea = bboxW * bboxH;
+    const avgRadius = rSum / n;
+    const metric   = avgRadius;
+    const t0 = ts[0];
+    const rx = t0.radiusX || 0, ry = t0.radiusY || 0;
+    const x  = cx / n, y = cy / n;
 
-    // Use avgRadius as classification metric (swap for bboxArea if screen reports fixed radius)
-    const metric = avgRadius;
-    const t0  = ts[0];
-    const rx  = t0.radiusX || 0;
-    const ry  = t0.radiusY || 0;
-
-    // Lock tool ONLY on the very first contact of the stroke.
-    // Tilt adds new touch points → fires more touchstart events → must NOT re-classify.
     if (e.type === 'touchstart' && this._strokeTool === null) {
       this._strokeTool = this._classify(metric);
+      this._velPos = null; this._velP = 0.5;
     }
     const tool = this._strokeTool || 'none';
 
     this._emit(e.type === 'touchstart' ? 'pendown' : 'penmove', {
-      x: cx / n,
-      y: cy / n,
-      tool,
-      pressure:   this._pressure(metric, tool),
+      x, y, tool,
+      pressure:   this._velPressure(x, y),
       metric,
       pointCount: n,
       radiusX:    rx,
@@ -90,6 +95,21 @@ export class PenDetector {
       radiusMag:  Math.sqrt(rx * rx + ry * ry),
       bboxW, bboxH, bboxArea,
     });
+  }
+
+  // Velocity-based pressure: slow stroke → high pressure, fast → low.
+  // Max speed ≈ 3 px/ms feels natural; below 0.1 px/ms = full pressure.
+  _velPressure(x, y) {
+    const now = Date.now();
+    if (this._velPos) {
+      const dx = x - this._velPos.x, dy = y - this._velPos.y;
+      const dt = Math.max(1, now - this._velPos.t);
+      const speed = Math.sqrt(dx * dx + dy * dy) / dt; // px/ms
+      const raw = 1 - Math.min(1, speed / 3);
+      this._velP = this._velP * 0.6 + raw * 0.4;       // EMA smooth
+    }
+    this._velPos = { x, y, t: now };
+    return this._velP;
   }
 
   // ── Ink (Pointer Events) ─────────────────────────────────────────────────
@@ -120,7 +140,6 @@ export class PenDetector {
     e.preventDefault();
     this._el.setPointerCapture(e.pointerId);
     this._active.add(e.pointerId);
-    // Lock tool at stroke start
     const isErase = (e.buttons & 32) !== 0;
     const p = e.pressure || 0;
     this._strokeTool = isErase ? 'eraser' : p > 0.45 ? 'penThick' : 'penThin';
@@ -146,12 +165,6 @@ export class PenDetector {
     if (m >= t.penThick.min && m <= t.penThick.max) return 'penThick';
     if (m >= t.eraser.min   && m <= t.eraser.max)   return 'eraser';
     return 'none';
-  }
-
-  _pressure(m, tool) {
-    const t = this._thr[tool];
-    if (!t || t.max <= t.min) return 0;
-    return Math.max(0, Math.min(1, (m - t.min) / (t.max - t.min)));
   }
 
   // ── public API ───────────────────────────────────────────────────────────

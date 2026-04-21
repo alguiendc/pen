@@ -89,7 +89,7 @@
   </div>
   <button class="plain" id="btn-clr">Limpiar</button>
   <button class="plain" id="btn-cfg">⚙ Calibrar</button>
-  <span style="margin-left:auto;font-size:10px;color:#444">v0.7</span>
+  <span style="margin-left:auto;font-size:10px;color:#444">v0.8</span>
 </div>
 
 <div id="wrap">
@@ -104,6 +104,7 @@
       <div class="inputs">
         <label>min<input type="number" id="min-penThin" step="0.1" value="0"></label>
         <label>max<input type="number" id="max-penThin" step="0.1" value="1.2"></label>
+        <!-- finger touch ~2.5-10 = none (not drawn) -->
       </div>
       <button class="btn-read" data-tool="penThin">▶ Leer</button>
       <div class="live" id="live-penThin"></div>
@@ -112,8 +113,8 @@
     <div class="tool-row" id="row-penThick">
       <div class="tool-label" style="color:#f8961e">● Lápiz grueso</div>
       <div class="inputs">
-        <label>min<input type="number" id="min-penThick" step="0.1" value="1.4"></label>
-        <label>max<input type="number" id="max-penThick" step="0.1" value="2.8"></label>
+        <label>min<input type="number" id="min-penThick" step="0.1" value="1.2"></label>
+        <label>max<input type="number" id="max-penThick" step="0.1" value="2.5"></label>
       </div>
       <button class="btn-read" data-tool="penThick">▶ Leer</button>
       <div class="live" id="live-penThick"></div>
@@ -122,8 +123,8 @@
     <div class="tool-row" id="row-eraser">
       <div class="tool-label" style="color:#f72585">● Palma</div>
       <div class="inputs">
-        <label>min<input type="number" id="min-eraser" step="0.1" value="13"></label>
-        <label>max<input type="number" id="max-eraser" step="0.1" value="20"></label>
+        <label>min<input type="number" id="min-eraser" step="0.1" value="10"></label>
+        <label>max<input type="number" id="max-eraser" step="0.1" value="30"></label>
       </div>
       <button class="btn-read" data-tool="eraser">▶ Leer</button>
       <div class="live" id="live-eraser"></div>
@@ -335,7 +336,7 @@ function syncInputs() {
 }
 
 document.getElementById('btn-reset').addEventListener('click', () => {
-  det.setThresholds({ penThin:{min:0,max:1.2}, penThick:{min:1.4,max:2.8}, eraser:{min:13,max:20} });
+  det.setThresholds({ penThin:{min:0,max:1.2}, penThick:{min:1.2,max:2.5}, eraser:{min:10,max:30} });
   saveThresholds();
   syncInputs();
 });
