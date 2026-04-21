@@ -1,9 +1,10 @@
 /**
- * pen-detector.js — minimal IR / Windows Ink detection
+ * pen-detector.js v0.4 — minimal IR / Windows Ink detection
  * Events: pendown(evt), penmove(evt), penup()
  * evt = { x, y, tool, pressure, metric, pointCount }
  * tool = 'penThin' | 'penThick' | 'eraser' | 'none'
  */
+export const VERSION = '0.4';
 
 const DEFAULTS = {
   penThin:  { min: 0,    max: 1.2 },
