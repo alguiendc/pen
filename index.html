@@ -111,7 +111,7 @@
     <span id="sm-p-val" style="color:#f8961e;min-width:28px">0.6</span>
   </label>
   <button class="plain" id="btn-cfg">⚙ Calibrar</button>
-  <span style="font-size:10px;color:#444">v1.1</span>
+  <span style="font-size:10px;color:#444">v1.2</span>
 </div>
 
 <div id="wrap">
@@ -189,7 +189,9 @@ resize();
 window.addEventListener('resize', resize);
 
 // ── detector ──────────────────────────────────────────────────────────────
-let det = null, mode = 'ir', prev = null, radMult = 8;
+let det = null, mode = 'ir', radMult = 8;
+let strokePts = [], strokeTool = null, erasePrev = null;
+
 document.getElementById('rad-mult').addEventListener('input', e => { radMult = Math.max(1, +e.target.value || 1); });
 document.getElementById('sm-xy').addEventListener('input', e => {
   const v = +e.target.value;
@@ -210,34 +212,102 @@ const STYLE = {
 
 function start(m) {
   if (det) det.destroy();
-  mode = m; prev = null;
+  mode = m; strokePts = []; strokeTool = null; erasePrev = null;
   const smXY = +document.getElementById('sm-xy').value;
   const smP  = +document.getElementById('sm-p').value;
   det = new PenDetector({ element: dc, mode: m, smooth: { xy: smXY, pressure: smP } });
-  det.on('pendown', e => { setDebug(e); prev = { x: e.x, y: e.y }; });
-  det.on('penmove', e => { setDebug(e); if (prev) draw(prev, e); prev = { x: e.x, y: e.y }; });
-  det.on('penup',   () => { prev = null; clearDebug(); });
+
+  det.on('pendown', e => {
+    setDebug(e);
+    if (e.tool === 'eraser') {
+      erasePrev = { x: e.x, y: e.y };
+    } else if (e.tool !== 'none') {
+      strokePts = [{ x: e.x, y: e.y, p: e.pressure, r: e.radiusMag || 0 }];
+      strokeTool = e.tool;
+    }
+  });
+
+  det.on('penmove', e => {
+    setDebug(e);
+    if (e.tool === 'eraser') {
+      if (erasePrev) eraseSegment(erasePrev, e);
+      erasePrev = { x: e.x, y: e.y };
+    } else if (strokeTool) {
+      strokePts.push({ x: e.x, y: e.y, p: e.pressure, r: e.radiusMag || 0 });
+      redrawActive();
+    }
+  });
+
+  det.on('penup', () => {
+    if (strokePts.length > 1 && strokeTool) commitStroke();
+    strokePts = []; strokeTool = null; erasePrev = null;
+    clearDebug();
+  });
 }
 
-function draw(from, evt) {
-  const s = STYLE[evt.tool];
-  if (!s) return;
-  dctx.beginPath();
-  dctx.moveTo(from.x, from.y);
-  dctx.lineTo(evt.x, evt.y);
-  dctx.lineWidth = s.color === null ? 50
-                 : mode === 'ir'    ? Math.max(1, (evt.radiusMag || 0) * radMult)
-                 :                    s.w * (0.6 + evt.pressure * 0.8);
-  dctx.lineCap = dctx.lineJoin = 'round';
-  if (s.color) {
-    dctx.globalCompositeOperation = 'source-over';
-    dctx.strokeStyle = s.color;
-  } else {
-    dctx.globalCompositeOperation = 'destination-out';
-    dctx.strokeStyle = 'rgba(0,0,0,1)';
+// ── Catmull-Rom rendering ─────────────────────────────────────────────────
+
+function strokeLineWidth(pts) {
+  if (!pts.length) return 2;
+  const s = STYLE[strokeTool]; if (!s) return 2;
+  if (mode === 'ir') {
+    const avgR = pts.reduce((a, p) => a + p.r, 0) / pts.length;
+    return Math.max(1, avgR * radMult);
   }
-  dctx.stroke();
-  dctx.globalCompositeOperation = 'source-over';
+  const avgP = pts.reduce((a, p) => a + p.p, 0) / pts.length;
+  return s.w * (0.6 + avgP * 0.8);
+}
+
+function catmullRom(ctx, pts, color, lw) {
+  if (pts.length < 2) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = color;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    ctx.bezierCurveTo(
+      p1.x + (p2.x - p0.x) / 6, p1.y + (p2.y - p0.y) / 6,
+      p2.x - (p3.x - p1.x) / 6, p2.y - (p3.y - p1.y) / 6,
+      p2.x, p2.y
+    );
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function redrawActive() {
+  const s = STYLE[strokeTool]; if (!s || strokePts.length < 2) return;
+  const dpr = devicePixelRatio || 1;
+  dctx.clearRect(0, 0, dc.width / dpr, dc.height / dpr);
+  catmullRom(dctx, strokePts, s.color, strokeLineWidth(strokePts));
+}
+
+function commitStroke() {
+  const s = STYLE[strokeTool]; if (!s) return;
+  catmullRom(cctx, strokePts, s.color, strokeLineWidth(strokePts));
+  const dpr = devicePixelRatio || 1;
+  dctx.clearRect(0, 0, dc.width / dpr, dc.height / dpr);
+}
+
+function eraseSegment(from, evt) {
+  [cctx, dctx].forEach(ctx => {
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(evt.x, evt.y);
+    ctx.lineWidth = 50; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,1)';
+    ctx.stroke();
+    ctx.restore();
+  });
 }
 
 // ── debug bar ─────────────────────────────────────────────────────────────
@@ -431,8 +501,10 @@ document.getElementById('btn-reset').addEventListener('click', () => {
 });
 
 document.getElementById('btn-clr').addEventListener('click', () => {
-  const w = dc.width / (devicePixelRatio||1), h = dc.height / (devicePixelRatio||1);
+  const dpr = devicePixelRatio || 1;
+  const w = dc.width / dpr, h = dc.height / dpr;
   dctx.clearRect(0, 0, w, h);
+  cctx.clearRect(0, 0, w, h);
 });
 
 // ── init ──────────────────────────────────────────────────────────────────
