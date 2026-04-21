@@ -85,11 +85,16 @@
     <span id="d4">rY:—</span> &nbsp;
     <span id="d5">√(rX²+rY²):—</span><br>
     <span id="d6">bbox W×H:—</span> &nbsp;
-    <span id="d7">bboxArea:—</span>
+    <span id="d7">bboxArea:—</span> &nbsp;
+    <span id="d8" style="color:#4cc9f0">grosor:—</span>
   </div>
   <button class="plain" id="btn-clr">Limpiar</button>
+  <label id="mult-wrap" style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;white-space:nowrap">
+    ×rad <input type="number" id="rad-mult" value="8" min="1" max="200" step="1"
+      style="width:50px;background:#0a1525;border:1px solid #1a3a5a;color:#4cc9f0;font-family:monospace;font-size:13px;padding:2px 5px;border-radius:4px">
+  </label>
   <button class="plain" id="btn-cfg">⚙ Calibrar</button>
-  <span style="margin-left:auto;font-size:10px;color:#444">v0.8</span>
+  <span style="margin-left:auto;font-size:10px;color:#444">v0.9</span>
 </div>
 
 <div id="wrap">
@@ -155,7 +160,8 @@ resize();
 window.addEventListener('resize', resize);
 
 // ── detector ──────────────────────────────────────────────────────────────
-let det = null, mode = 'ir', prev = null;
+let det = null, mode = 'ir', prev = null, radMult = 8;
+document.getElementById('rad-mult').addEventListener('input', e => { radMult = Math.max(1, +e.target.value || 1); });
 
 const STYLE = {
   penThin:  { w: 2,  color: '#4cc9f0' },
@@ -192,7 +198,10 @@ function draw(from, evt) {
   dctx.beginPath();
   dctx.moveTo(from.x, from.y);
   dctx.lineTo(evt.x, evt.y);
-  dctx.lineWidth = s.w * (0.6 + evt.pressure * 0.8);
+  // IR: grosor directo del radio × multiplicador; eraser fijo; Ink: usa presión hardware
+  dctx.lineWidth = s.color === null ? 50
+                 : mode === 'ir'    ? Math.max(1, (evt.radiusMag || 0) * radMult)
+                 :                    s.w * (0.6 + evt.pressure * 0.8);
   dctx.lineCap = dctx.lineJoin = 'round';
   if (s.color) {
     dctx.globalCompositeOperation = 'source-over';
@@ -216,6 +225,10 @@ function setDebug(e) {
   document.getElementById('d5').textContent = `√(rX²+rY²):${(e.radiusMag ?? 0).toFixed(2)}`;
   document.getElementById('d6').textContent = `bbox:${Math.round(e.bboxW??0)}×${Math.round(e.bboxH??0)}`;
   document.getElementById('d7').textContent = `bboxArea:${Math.round(e.bboxArea??0)}px²`;
+  if (mode === 'ir') {
+    const lw = (e.radiusMag || 0) * radMult;
+    document.getElementById('d8').textContent = `grosor:${lw.toFixed(1)}px`;
+  }
 }
 function clearDebug() {
   document.getElementById('tool').textContent = 'Ninguno';
@@ -230,6 +243,8 @@ document.getElementById('btn-ir').addEventListener('click', () => {
   document.getElementById('btn-ir').classList.add('on');
   document.getElementById('btn-ink').classList.remove('on');
   document.getElementById('btn-cfg').style.display = '';
+  document.getElementById('mult-wrap').style.display = '';
+  document.getElementById('d8').style.display = '';
   start('ir');
   syncInputs();
 });
@@ -237,6 +252,8 @@ document.getElementById('btn-ink').addEventListener('click', () => {
   document.getElementById('btn-ink').classList.add('on');
   document.getElementById('btn-ir').classList.remove('on');
   document.getElementById('btn-cfg').style.display = 'none';
+  document.getElementById('mult-wrap').style.display = 'none';
+  document.getElementById('d8').style.display = 'none';
   document.getElementById('cal').classList.remove('open');
   document.getElementById('btn-cfg').classList.remove('on');
   start('ink');

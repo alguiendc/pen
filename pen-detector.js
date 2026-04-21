@@ -5,7 +5,7 @@
  * tool = 'penThin' | 'penThick' | 'eraser' | 'none'
  * IR pressure estimated from stroke velocity (slow = high pressure).
  */
-export const VERSION = '0.8';
+export const VERSION = '0.9';
 
 const DEFAULTS = {
   penThin:  { min: 0,   max: 1.2 },
